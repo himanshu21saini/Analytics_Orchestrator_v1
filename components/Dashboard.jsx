@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  BarChart, Bar, AreaChart, Area,
   PieChart, Pie, Cell, ScatterChart, Scatter,
   XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -10,6 +10,8 @@ import KPICard from './KPICard'
 import SummaryPanel from './SummaryPanel'
 import DecisionPanel from './DecisionPanel'
 import WhatIfDrawer from './WhatIfDrawer'
+import AnomalyRail, { getKpiAlertSeverity } from './AnomalyRail'
+import TrendExplorer from './TrendExplorer'
 
 // ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
@@ -116,8 +118,10 @@ export default function Dashboard({ session }) {
 
   var [whatifQuery, setWhatifQuery] = useState(null)
 
-  // Forecast state: map of resultId → { forecasts, trend, confidence, r_squared }
-  var [forecasts, setForecasts] = useState({})
+  // Anomaly state
+  var [anomalies,         setAnomalies]         = useState(null)
+  var [anomalyState,      setAnomalyState]      = useState('idle')  // idle | loading | done
+  var [anomalyRequested,  setAnomalyRequested]  = useState(false)
 
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
@@ -125,34 +129,25 @@ export default function Dashboard({ session }) {
   var allQueries   = session.queries      || []
 
   var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
-  var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && !r.error && r.data && r.data.length })
+  var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
+  var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && !r.error && r.data && r.data.length })
   var failed       = queryResults.filter(function(r) { return !!r.error })
 
-  // Auto-fetch forecasts for all line/area charts on mount
-  var [forecastsRequested, setForecastsRequested] = useState(false)
-  if (!forecastsRequested && chartResults.length > 0) {
-    setForecastsRequested(true)
-    var trendCharts = chartResults.filter(function(r) { return r.chart_type === 'line' || r.chart_type === 'area' })
-    trendCharts.forEach(function(result) {
-      var vk = result.value_key || 'value'
-      var lk = result.label_key || 'period'
-      fetch('/api/generate-forecast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seriesData: result.data, valueKey: vk, labelKey: lk, horizonMonths: 3 }),
-      })
-        .then(function(res) { return res.json() })
-        .then(function(json) {
-          if (json.forecasts) {
-            setForecasts(function(prev) {
-              var next = Object.assign({}, prev)
-              next[result.id] = json
-              return next
-            })
-          }
-        })
-        .catch(function() {}) // non-fatal — chart still renders without forecast
+  // Auto-fetch anomalies on mount
+  if (!anomalyRequested && queryResults.length > 0) {
+    setAnomalyRequested(true)
+    setAnomalyState('loading')
+    fetch('/api/detect-anomalies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ queryResults: queryResults, metadata: metadata }),
     })
+      .then(function(res) { return res.json() })
+      .then(function(json) {
+        setAnomalies(json.alerts || [])
+        setAnomalyState('done')
+      })
+      .catch(function() { setAnomalyState('done') }) // non-fatal
   }
 
   // Max 8 KPI cards (4 per row × 2 rows)
@@ -246,95 +241,7 @@ export default function Dashboard({ session }) {
       )
     }
 
-    if (ct === 'line') {
-      var fc         = forecasts[result.id]
-      var mergedLine = data.slice()
-      if (fc && fc.forecasts) {
-        fc.forecasts.forEach(function(f) { mergedLine.push({ [labelKey]: f.period, [valueKey]: null, forecast: f.forecast, forecast_low: f.forecast_low, forecast_high: f.forecast_high }) })
-      }
-      var trendBadge = fc ? (fc.trend === 'up' ? '↑ ' : fc.trend === 'down' ? '↓ ' : '→ ') + 'trend · ' + (fc.confidence || '') + ' conf.' : null
-      return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate} badge={trendBadge || badge}>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={mergedLine} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
-              <defs>
-                <linearGradient id={'fcg' + idx} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F0A030" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="#F0A030" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
-              <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
-                if (v === null || v === undefined) return null
-                return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n]
-              }} />
-              <Line type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4, fill: color }} connectNulls={false} />
-              {fc && fc.forecasts && (
-                <Line type="monotone" dataKey="forecast" name="Forecast" stroke="#F0A030" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3, fill: '#F0A030', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={true} />
-              )}
-              {fc && fc.forecasts && (
-                <Line type="monotone" dataKey="forecast_high" name="Upper bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" dot={false} activeDot={false} connectNulls={true} legendType="none" />
-              )}
-              {fc && fc.forecasts && (
-                <Line type="monotone" dataKey="forecast_low" name="Lower bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" dot={false} activeDot={false} connectNulls={true} legendType="none" />
-              )}
-              {fc && fc.forecasts && (
-                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      )
-    }
-
-    if (ct === 'area') {
-      var fcA        = forecasts[result.id]
-      var mergedArea = data.slice()
-      if (fcA && fcA.forecasts) {
-        fcA.forecasts.forEach(function(f) { mergedArea.push({ [labelKey]: f.period, [valueKey]: null, forecast: f.forecast, forecast_low: f.forecast_low, forecast_high: f.forecast_high }) })
-      }
-      var trendBadgeA = fcA ? (fcA.trend === 'up' ? '↑ ' : fcA.trend === 'down' ? '↓ ' : '→ ') + 'trend · ' + (fcA.confidence || '') + ' conf.' : null
-      return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate} badge={trendBadgeA || badge}>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={mergedArea} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
-              <defs>
-                <linearGradient id={'ag' + idx} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0.01} />
-                </linearGradient>
-                <linearGradient id={'fcag' + idx} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F0A030" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#F0A030" stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
-              <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
-                if (v === null || v === undefined) return null
-                return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n]
-              }} />
-              <Area type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} fill={'url(#ag' + idx + ')'} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={false} />
-              {fcA && fcA.forecasts && (
-                <Area type="monotone" dataKey="forecast" name="Forecast" stroke="#F0A030" strokeWidth={1.5} strokeDasharray="5 3" fill={'url(#fcag' + idx + ')'} dot={{ r: 3, fill: '#F0A030', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={true} />
-              )}
-              {fcA && fcA.forecasts && (
-                <Area type="monotone" dataKey="forecast_high" name="Upper bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" fill="none" dot={false} activeDot={false} connectNulls={true} legendType="none" />
-              )}
-              {fcA && fcA.forecasts && (
-                <Area type="monotone" dataKey="forecast_low" name="Lower bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" fill="none" dot={false} activeDot={false} connectNulls={true} legendType="none" />
-              )}
-              {fcA && fcA.forecasts && (
-                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      )
-    }
+    // line and area chart types are rendered by TrendExplorer above the chart grid
 
     if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 48 : 0
@@ -398,6 +305,8 @@ export default function Dashboard({ session }) {
               <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
               {visibleKpis.length} indicators
               <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
+              {trendResults.length} trends
+              <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
               {chartResults.length} charts
             </p>
           </div>
@@ -451,6 +360,11 @@ export default function Dashboard({ session }) {
       {/* Teal divider */}
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
+      {/* ── Anomaly Rail ──────────────────────────────────────────── */}
+      {anomalyState !== 'idle' && (
+        <AnomalyRail alerts={anomalies} state={anomalyState} />
+      )}
+
       {/* ── KPI Cards (max 4 per row, 2 rows = 8 max) ────────────── */}
       {visibleKpis.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
@@ -458,14 +372,25 @@ export default function Dashboard({ session }) {
             var row    = r.data[0] || {}
             var curKey = r.current_key  || r.value_key || 'current_value'
             var cmpKey = r.comparison_key || 'comparison_value'
-            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} />
+            var alertSeverity = getKpiAlertSeverity(anomalies, r.id)
+            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} anomalySeverity={alertSeverity} />
           })}
         </div>
       )}
 
       {/* Divider */}
-      {chartResults.length > 0 && (
+      {(trendResults.length > 0 || chartResults.length > 0) && (
         <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />
+      )}
+
+      {/* ── Trend Explorer (full width, single interactive chart) ─── */}
+      {trendResults.length > 0 && (
+        <TrendExplorer
+          trendResults={trendResults}
+          allQueries={allQueries}
+          periodInfo={periodInfo}
+          onSimulate={function(q) { setWhatifQuery(q) }}
+        />
       )}
 
       {/* ── Charts ────────────────────────────────────────────────── */}
