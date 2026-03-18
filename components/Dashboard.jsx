@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import KPICard from './KPICard'
 import SummaryPanel from './SummaryPanel'
+import DecisionPanel from './DecisionPanel'
 
 // ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
@@ -92,6 +93,10 @@ export default function Dashboard({ session }) {
   var [narrative,    setNarrative]    = useState(null)
   var [summaryError, setSummaryError] = useState('')
 
+  var [decisionState, setDecisionState] = useState('idle')
+  var [decisionResult, setDecisionResult] = useState(null)
+  var [decisionError,  setDecisionError]  = useState('')
+
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
@@ -112,6 +117,16 @@ export default function Dashboard({ session }) {
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setNarrative(json.result.narrative); setSummaryState('done')
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
+  }
+
+  async function handleGenerateDecisions() {
+    setDecisionState('loading'); setDecisionResult(null); setDecisionError('')
+    try {
+      var res = await fetch('/api/generate-decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults, metadata, periodInfo }) })
+      var json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      setDecisionResult(json.result); setDecisionState('done')
+    } catch (err) { setDecisionError(err.message); setDecisionState('error') }
   }
 
   function getInsight(resultId) {
@@ -274,26 +289,49 @@ export default function Dashboard({ session }) {
             </p>
           </div>
 
-          <button
-            onClick={handleGenerateSummary}
-            disabled={summaryState === 'loading'}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-              background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
-              border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
-              borderRadius: 'var(--radius-md)',
-              fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-              color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
-              cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
-              fontFamily: 'var(--font-display)', transition: 'all var(--transition)', flexShrink: 0,
-              boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
-            }}
-          >
-            {summaryState === 'loading'
-              ? <><span className="spinner" /> Composing...</>
-              : <>{summaryState === 'done' ? 'Regenerate Report' : 'Generate Intelligence Report'}</>
-            }
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={handleGenerateDecisions}
+              disabled={decisionState === 'loading'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)',
+                border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'),
+                borderRadius: 'var(--radius-md)',
+                fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0',
+                cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+                boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)',
+              }}
+            >
+              {decisionState === 'loading'
+                ? <><span className="spinner" /> Analysing...</>
+                : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>
+              }
+            </button>
+
+            <button
+              onClick={handleGenerateSummary}
+              disabled={summaryState === 'loading'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+                border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
+                borderRadius: 'var(--radius-md)',
+                fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
+                cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+                boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
+              }}
+            >
+              {summaryState === 'loading'
+                ? <><span className="spinner" /> Composing...</>
+                : <>{summaryState === 'done' ? 'Regenerate Report' : 'Generate Report'}</>
+              }
+            </button>
+          </div>
         </div>
       )}
 
@@ -336,6 +374,9 @@ export default function Dashboard({ session }) {
 
       {/* ── Query Inspector ──────────────────────────────────────── */}
       <QueryInspector queries={allQueries} periodInfo={periodInfo} />
+
+      {/* ── Decision Intelligence ─────────────────────────────────── */}
+      {decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
 
       {/* ── Summary ──────────────────────────────────────────────── */}
       {summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
