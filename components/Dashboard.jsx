@@ -129,33 +129,6 @@ export default function Dashboard({ session }) {
     })
   }
 
-  // Build a synthetic queryResults array that includes trend data from TrendExplorer.
-  // Each trend KPI becomes a pseudo result with chart_type 'area' so the LLM sees
-  // the full time-series shape alongside the KPI card point-in-time values.
-  function buildEnrichedQueryResults() {
-    var trendResults = Object.keys(trendDataCache).map(function(field) {
-      var entry = trendDataCache[field]
-      var meta  = entry.meta || {}
-      return {
-        id:         'trend_' + field,
-        title:      (meta.display_name || field) + ' (trend)',
-        chart_type: 'area',
-        label_key:  'period',
-        value_key:  'value',
-        unit:       meta.unit || '',
-        data:       entry.data,
-        error:      null,
-      }
-    })
-    // Merge: original session results first, then trend results that aren't
-    // already represented as a line/area in the session
-    var existingIds = new Set(queryResults.map(function(r) { return r.id }))
-    var newTrends   = trendResults.filter(function(r) {
-      return !existingIds.has(r.id.replace('trend_', ''))
-    })
-    return queryResults.concat(newTrends)
-  }
-
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
@@ -165,6 +138,72 @@ export default function Dashboard({ session }) {
   var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
   var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && !r.error && r.data && r.data.length })
   var failed       = queryResults.filter(function(r) { return !!r.error })
+
+  // Build enriched payload for LLM calls.
+  // Converts each cached trend series into BOTH:
+  //   1. A synthetic 'kpi' result — so generate-decisions can read it as a KPI
+  //      with current_value (latest data point) and comparison_value (year-ago point)
+  //   2. A synthetic 'area' result — so generate-summary sees the full time series
+  // This ensures trend data appears in health scores, decisions, AND narratives.
+  function buildEnrichedQueryResults() {
+    var existingKpiFields = new Set(
+      queryResults
+        .filter(function(r) { return r.chart_type === 'kpi' })
+        .map(function(r) { return r.id })
+    )
+
+    var syntheticResults = []
+
+    Object.keys(trendDataCache).forEach(function(field) {
+      var entry    = trendDataCache[field]
+      var meta     = entry.meta || {}
+      var data     = entry.data || []
+      if (!data.length) return
+
+      // Sort chronologically
+      var sorted = data.slice().sort(function(a, b) {
+        return String(a.period || '').localeCompare(String(b.period || ''))
+      })
+
+      var latest   = sorted[sorted.length - 1]
+      var latestVal = parseFloat((latest && latest.value) || 0)
+
+      // Find year-ago point (12 periods back) for comparison
+      var yearAgoIdx = sorted.length >= 13 ? sorted.length - 13 : 0
+      var yearAgo    = sorted[yearAgoIdx]
+      var yearAgoVal = parseFloat((yearAgo && yearAgo.value) || 0)
+
+      // 1. Synthetic KPI card result — only add if not already present as a real KPI
+      if (!existingKpiFields.has(field)) {
+        syntheticResults.push({
+          id:              'trend_kpi_' + field,
+          title:           meta.display_name || field,
+          chart_type:      'kpi',
+          current_key:     'current_value',
+          comparison_key:  'comparison_value',
+          value_key:       'current_value',
+          unit:            meta.unit || '',
+          data:            [{ current_value: latestVal, comparison_value: yearAgoVal }],
+          error:           null,
+          _from_trend:     true,
+        })
+      }
+
+      // 2. Trend series result — always add so the LLM sees trajectory
+      syntheticResults.push({
+        id:         'trend_series_' + field,
+        title:      (meta.display_name || field) + ' monthly trend',
+        chart_type: 'area',
+        label_key:  'period',
+        value_key:  'value',
+        unit:       meta.unit || '',
+        data:       sorted.slice(-24), // last 24 months max — keeps payload lean
+        error:      null,
+      })
+    })
+
+    return queryResults.concat(syntheticResults)
+  }
 
   // Max 8 KPI cards (4 per row × 2 rows)
   var visibleKpis = kpiResults.slice(0, 8)
