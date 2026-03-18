@@ -117,6 +117,45 @@ export default function Dashboard({ session }) {
 
   var [whatifQuery, setWhatifQuery] = useState(null)
 
+  // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
+  // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
+  var [trendDataCache, setTrendDataCache] = useState({})
+
+  function handleTrendData(fieldName, data, meta) {
+    setTrendDataCache(function(prev) {
+      var next = Object.assign({}, prev)
+      next[fieldName] = { data: data, meta: meta }
+      return next
+    })
+  }
+
+  // Build a synthetic queryResults array that includes trend data from TrendExplorer.
+  // Each trend KPI becomes a pseudo result with chart_type 'area' so the LLM sees
+  // the full time-series shape alongside the KPI card point-in-time values.
+  function buildEnrichedQueryResults() {
+    var trendResults = Object.keys(trendDataCache).map(function(field) {
+      var entry = trendDataCache[field]
+      var meta  = entry.meta || {}
+      return {
+        id:         'trend_' + field,
+        title:      (meta.display_name || field) + ' (trend)',
+        chart_type: 'area',
+        label_key:  'period',
+        value_key:  'value',
+        unit:       meta.unit || '',
+        data:       entry.data,
+        error:      null,
+      }
+    })
+    // Merge: original session results first, then trend results that aren't
+    // already represented as a line/area in the session
+    var existingIds = new Set(queryResults.map(function(r) { return r.id }))
+    var newTrends   = trendResults.filter(function(r) {
+      return !existingIds.has(r.id.replace('trend_', ''))
+    })
+    return queryResults.concat(newTrends)
+  }
+
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
@@ -133,7 +172,8 @@ export default function Dashboard({ session }) {
   async function handleGenerateSummary() {
     setSummaryState('loading'); setNarrative(null); setSummaryError('')
     try {
-      var res = await fetch('/api/generate-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults, metadata, periodInfo }) })
+      var enriched = buildEnrichedQueryResults()
+      var res = await fetch('/api/generate-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setNarrative(json.result.narrative); setSummaryState('done')
@@ -143,7 +183,8 @@ export default function Dashboard({ session }) {
   async function handleGenerateDecisions() {
     setDecisionState('loading'); setDecisionResult(null); setDecisionError('')
     try {
-      var res = await fetch('/api/generate-decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults, metadata, periodInfo }) })
+      var enriched = buildEnrichedQueryResults()
+      var res = await fetch('/api/generate-decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setDecisionResult(json.result); setDecisionState('done')
@@ -360,6 +401,7 @@ export default function Dashboard({ session }) {
           metadata={metadata}
           datasetId={session.datasetId}
           onSimulate={function(q) { setWhatifQuery(q) }}
+          onTrendData={handleTrendData}
         />
       )}
 
