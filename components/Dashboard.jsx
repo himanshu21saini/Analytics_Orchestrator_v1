@@ -116,6 +116,9 @@ export default function Dashboard({ session }) {
 
   var [whatifQuery, setWhatifQuery] = useState(null)
 
+  // Forecast state: map of resultId → { forecasts, trend, confidence, r_squared }
+  var [forecasts, setForecasts] = useState({})
+
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
@@ -124,6 +127,33 @@ export default function Dashboard({ session }) {
   var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
   var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && !r.error && r.data && r.data.length })
   var failed       = queryResults.filter(function(r) { return !!r.error })
+
+  // Auto-fetch forecasts for all line/area charts on mount
+  var [forecastsRequested, setForecastsRequested] = useState(false)
+  if (!forecastsRequested && chartResults.length > 0) {
+    setForecastsRequested(true)
+    var trendCharts = chartResults.filter(function(r) { return r.chart_type === 'line' || r.chart_type === 'area' })
+    trendCharts.forEach(function(result) {
+      var vk = result.value_key || 'value'
+      var lk = result.label_key || 'period'
+      fetch('/api/generate-forecast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seriesData: result.data, valueKey: vk, labelKey: lk, horizonMonths: 3 }),
+      })
+        .then(function(res) { return res.json() })
+        .then(function(json) {
+          if (json.forecasts) {
+            setForecasts(function(prev) {
+              var next = Object.assign({}, prev)
+              next[result.id] = json
+              return next
+            })
+          }
+        })
+        .catch(function() {}) // non-fatal — chart still renders without forecast
+    })
+  }
 
   // Max 8 KPI cards (4 per row × 2 rows)
   var visibleKpis = kpiResults.slice(0, 8)
@@ -217,15 +247,42 @@ export default function Dashboard({ session }) {
     }
 
     if (ct === 'line') {
+      var fc         = forecasts[result.id]
+      var mergedLine = data.slice()
+      if (fc && fc.forecasts) {
+        fc.forecasts.forEach(function(f) { mergedLine.push({ [labelKey]: f.period, [valueKey]: null, forecast: f.forecast, forecast_low: f.forecast_low, forecast_high: f.forecast_high }) })
+      }
+      var trendBadge = fc ? (fc.trend === 'up' ? '↑ ' : fc.trend === 'down' ? '↓ ' : '→ ') + 'trend · ' + (fc.confidence || '') + ' conf.' : null
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate} badge={trendBadge || badge}>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
+            <LineChart data={mergedLine} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
+              <defs>
+                <linearGradient id={'fcg' + idx} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F0A030" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="#F0A030" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Line type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4, fill: color }} />
+              <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
+                if (v === null || v === undefined) return null
+                return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n]
+              }} />
+              <Line type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4, fill: color }} connectNulls={false} />
+              {fc && fc.forecasts && (
+                <Line type="monotone" dataKey="forecast" name="Forecast" stroke="#F0A030" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3, fill: '#F0A030', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={true} />
+              )}
+              {fc && fc.forecasts && (
+                <Line type="monotone" dataKey="forecast_high" name="Upper bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" dot={false} activeDot={false} connectNulls={true} legendType="none" />
+              )}
+              {fc && fc.forecasts && (
+                <Line type="monotone" dataKey="forecast_low" name="Lower bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" dot={false} activeDot={false} connectNulls={true} legendType="none" />
+              )}
+              {fc && fc.forecasts && (
+                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -233,21 +290,46 @@ export default function Dashboard({ session }) {
     }
 
     if (ct === 'area') {
+      var fcA        = forecasts[result.id]
+      var mergedArea = data.slice()
+      if (fcA && fcA.forecasts) {
+        fcA.forecasts.forEach(function(f) { mergedArea.push({ [labelKey]: f.period, [valueKey]: null, forecast: f.forecast, forecast_low: f.forecast_low, forecast_high: f.forecast_high }) })
+      }
+      var trendBadgeA = fcA ? (fcA.trend === 'up' ? '↑ ' : fcA.trend === 'down' ? '↓ ' : '→ ') + 'trend · ' + (fcA.confidence || '') + ' conf.' : null
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate} badge={trendBadgeA || badge}>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
+            <AreaChart data={mergedArea} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
               <defs>
                 <linearGradient id={'ag' + idx} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={color} stopOpacity={0.3} />
                   <stop offset="100%" stopColor={color} stopOpacity={0.01} />
                 </linearGradient>
+                <linearGradient id={'fcag' + idx} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F0A030" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#F0A030" stopOpacity={0.01} />
+                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Area type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} fill={'url(#ag' + idx + ')'} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+              <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
+                if (v === null || v === undefined) return null
+                return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n]
+              }} />
+              <Area type="monotone" dataKey={valueKey} name={result.title} stroke={color} strokeWidth={1.5} fill={'url(#ag' + idx + ')'} dot={{ r: 2, fill: color, strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={false} />
+              {fcA && fcA.forecasts && (
+                <Area type="monotone" dataKey="forecast" name="Forecast" stroke="#F0A030" strokeWidth={1.5} strokeDasharray="5 3" fill={'url(#fcag' + idx + ')'} dot={{ r: 3, fill: '#F0A030', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={true} />
+              )}
+              {fcA && fcA.forecasts && (
+                <Area type="monotone" dataKey="forecast_high" name="Upper bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" fill="none" dot={false} activeDot={false} connectNulls={true} legendType="none" />
+              )}
+              {fcA && fcA.forecasts && (
+                <Area type="monotone" dataKey="forecast_low" name="Lower bound" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 4" fill="none" dot={false} activeDot={false} connectNulls={true} legendType="none" />
+              )}
+              {fcA && fcA.forecasts && (
+                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
