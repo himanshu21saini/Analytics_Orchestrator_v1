@@ -10,7 +10,6 @@ import KPICard from './KPICard'
 import SummaryPanel from './SummaryPanel'
 import DecisionPanel from './DecisionPanel'
 import WhatIfDrawer from './WhatIfDrawer'
-import AnomalyRail, { getKpiAlertSeverity } from './AnomalyRail'
 import TrendExplorer from './TrendExplorer'
 
 // ESSEX-inspired teal/blue palette
@@ -118,11 +117,6 @@ export default function Dashboard({ session }) {
 
   var [whatifQuery, setWhatifQuery] = useState(null)
 
-  // Anomaly state
-  var [anomalies,         setAnomalies]         = useState(null)
-  var [anomalyState,      setAnomalyState]      = useState('idle')  // idle | loading | done
-  var [anomalyRequested,  setAnomalyRequested]  = useState(false)
-
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
@@ -132,23 +126,6 @@ export default function Dashboard({ session }) {
   var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
   var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && !r.error && r.data && r.data.length })
   var failed       = queryResults.filter(function(r) { return !!r.error })
-
-  // Auto-fetch anomalies on mount
-  if (!anomalyRequested && queryResults.length > 0) {
-    setAnomalyRequested(true)
-    setAnomalyState('loading')
-    fetch('/api/detect-anomalies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ queryResults: queryResults, metadata: metadata }),
-    })
-      .then(function(res) { return res.json() })
-      .then(function(json) {
-        setAnomalies(json.alerts || [])
-        setAnomalyState('done')
-      })
-      .catch(function() { setAnomalyState('done') }) // non-fatal
-  }
 
   // Max 8 KPI cards (4 per row × 2 rows)
   var visibleKpis = kpiResults.slice(0, 8)
@@ -360,11 +337,6 @@ export default function Dashboard({ session }) {
       {/* Teal divider */}
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
-      {/* ── Anomaly Rail ──────────────────────────────────────────── */}
-      {anomalyState !== 'idle' && (
-        <AnomalyRail alerts={anomalies} state={anomalyState} />
-      )}
-
       {/* ── KPI Cards (max 4 per row, 2 rows = 8 max) ────────────── */}
       {visibleKpis.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
@@ -372,8 +344,7 @@ export default function Dashboard({ session }) {
             var row    = r.data[0] || {}
             var curKey = r.current_key  || r.value_key || 'current_value'
             var cmpKey = r.comparison_key || 'comparison_value'
-            var alertSeverity = getKpiAlertSeverity(anomalies, r.id)
-            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} anomalySeverity={alertSeverity} />
+            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} />
           })}
         </div>
       )}
