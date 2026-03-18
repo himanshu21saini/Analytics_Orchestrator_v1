@@ -17,16 +17,44 @@ export async function POST(request) {
     return Response.json({ error: 'No query results provided.' }, { status: 400 })
   }
 
-  var resultsSummary = queryResults
-    .filter(function(r) { return !r.error && r.data && r.data.length })
+  var kpiResults = queryResults
+    .filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
     .map(function(r) {
+      var row    = r.data[0] || {}
+      var curKey = r.current_key || r.value_key || 'current_value'
+      var cmpKey = r.comparison_key || 'comparison_value'
+      var curr   = parseFloat(row[curKey])
+      var prev   = parseFloat(row[cmpKey])
+      var chg    = (!isNaN(curr) && !isNaN(prev) && prev !== 0)
+        ? (((curr - prev) / Math.abs(prev)) * 100).toFixed(1) : null
+      return { title: r.title, unit: r.unit || '', current: isNaN(curr) ? null : curr, previous: isNaN(prev) ? null : prev, change_pct: chg ? parseFloat(chg) : null }
+    })
+
+  // Compute trend trajectory for area/line results (from Trend Explorer)
+  var trendResults = queryResults
+    .filter(function(r) { return (r.chart_type === 'area' || r.chart_type === 'line') && !r.error && r.data && r.data.length >= 3 })
+    .map(function(r) {
+      var sorted = r.data.slice().sort(function(a, b) { return String(a.period || a.label || '').localeCompare(String(b.period || b.label || '')) })
+      var vals   = sorted.map(function(row) { return parseFloat(row.value || row.current_value || 0) }).filter(function(v) { return !isNaN(v) })
+      if (vals.length < 3) return null
+      var latest = vals[vals.length - 1]
+      var first  = vals[0]
+      var overallChg = first !== 0 ? ((latest - first) / Math.abs(first) * 100).toFixed(1) : null
       return {
-        title:      r.title,
-        chart_type: r.chart_type,
-        unit:       r.unit,
-        data:       r.data.slice(0, 20),
+        title:     r.title,
+        unit:      r.unit || '',
+        periods:   vals.length,
+        latest:    latest,
+        overall_change_pct: overallChg ? parseFloat(overallChg) : null,
+        direction: latest > first ? 'up' : latest < first ? 'down' : 'flat',
+        recent_values: vals.slice(-6), // last 6 months for context
       }
     })
+    .filter(Boolean)
+
+  var chartResults = queryResults
+    .filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'area' && r.chart_type !== 'line' && !r.error && r.data && r.data.length })
+    .map(function(r) { return { title: r.title, chart_type: r.chart_type, data: r.data.slice(0, 20) } })
 
   var metaSummary = (metadata || []).map(function(m) {
     return {
@@ -45,11 +73,18 @@ export async function POST(request) {
     periodContext = '\n\nTIME PERIOD CONTEXT:\nCurrent period: ' + (periodInfo.viewLabel || 'Not specified') + '\nComparison period: ' + (periodInfo.cmpLabel || 'Not specified') + '\nMake sure to mention these specific time periods in your narrative.'
   }
 
+  var trendSection = trendResults.length
+    ? '\n\nTREND TRAJECTORIES (from Trend Explorer — multi-period history):\n' + JSON.stringify(trendResults, null, 2)
+    : ''
+
   var prompt = 'You are an expert BI analyst and executive business narrator for a banking dashboard.\n\n'
     + 'Below are actual query results from a live banking dashboard, along with field metadata.'
     + periodContext
-    + '\n\nQUERY RESULTS:\n'
-    + JSON.stringify(resultsSummary, null, 2)
+    + '\n\nKPI SNAPSHOT (point-in-time):\n'
+    + JSON.stringify(kpiResults, null, 2)
+    + trendSection
+    + '\n\nCHART DATA (dimension breakdowns):\n'
+    + JSON.stringify(chartResults, null, 2)
     + '\n\nMETADATA:\n'
     + JSON.stringify(metaSummary, null, 2)
     + '\n\nRULES:\n'
@@ -57,7 +92,8 @@ export async function POST(request) {
     + '2. Always mention the specific time period (' + (periodInfo.viewLabel || '') + ') and comparison (' + (periodInfo.cmpLabel || '') + ') at the start.\n'
     + '3. Use metadata to correctly interpret field names and units.\n'
     + '4. Compare values against benchmarks where available.\n'
-    + '5. Return a JSON object only — no markdown, no explanation.\n\n'
+    + '5. If trend trajectories are provided, reference them in key_highlights and closing_insight — mention direction and whether any KPI is accelerating.\n'
+    + '6. Return a JSON object only — no markdown, no explanation.\n\n'
     + 'Return this exact JSON structure:\n'
     + '{\n'
     + '  "kpis": [\n'
