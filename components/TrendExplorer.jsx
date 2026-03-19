@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  LineChart, Line, BarChart, Bar,
+  LineChart, Line,
   XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -68,7 +68,7 @@ function indexByYearMonth(rawData) {
   return idx
 }
 
-// ── MONTHLY view: Jan–Dec two-line + forecast slots ──────────────────────────
+// ── MONTHLY view: Jan–Dec two-line + forecast appended after cutoff ──────────
 function buildMonthlyData(rawData, forecast, timePeriod) {
   var curYear     = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
   var cmpYear     = curYear - 1
@@ -76,96 +76,114 @@ function buildMonthlyData(rawData, forecast, timePeriod) {
 
   var byYM = indexByYearMonth(rawData)
 
-  // Index forecast by period string 'YYYY-MM' → value
-  var fcByPeriod = {}
-  if (forecast && forecast.forecasts) {
-    forecast.forecasts.forEach(function(f) {
-      fcByPeriod[f.period] = { v: f.forecast, lo: f.forecast_low, hi: f.forecast_high }
-    })
-  }
-
-  return MONTHS.map(function(name, i) {
+  // Build base 12-month array
+  var rows = MONTHS.map(function(name, i) {
     var m = i + 1
-    var periodStr = curYear + '-' + String(m).padStart(2, '0')
-    var fc = fcByPeriod[periodStr]
     return {
       label:    name,
       curYear:  m <= cutoffMonth ? (byYM[curYear + '-' + m] !== undefined ? byYM[curYear + '-' + m] : null) : null,
       cmpYear:  byYM[cmpYear + '-' + m] !== undefined ? byYM[cmpYear + '-' + m] : null,
-      forecast: fc ? fc.v  : null,
-      fc_low:   fc ? fc.lo : null,
-      fc_high:  fc ? fc.hi : null,
+      forecast: null,
+      fc_low:   null,
+      fc_high:  null,
     }
   })
+
+  // Append forecast points — they come AFTER the cutoff month
+  // Each forecast has a period like '2024-07'; slot into the right month row
+  // or append a new row if it extends beyond December
+  if (forecast && forecast.forecasts) {
+    forecast.forecasts.forEach(function(f) {
+      var parts = String(f.period || '').split('-')
+      if (parts.length < 2) return
+      var fy = parseInt(parts[0])
+      var fm = parseInt(parts[1])
+      if (isNaN(fy) || isNaN(fm)) return
+
+      // Only show forecasts for current year months beyond cutoff
+      if (fy === curYear && fm > cutoffMonth && fm <= 12) {
+        rows[fm - 1].forecast = f.forecast
+        rows[fm - 1].fc_low   = f.forecast_low
+        rows[fm - 1].fc_high  = f.forecast_high
+      } else if (fy === curYear + 1 || (fy === curYear && fm > 12)) {
+        // Next year forecast months — append as extra rows
+        rows.push({
+          label:    MONTHS[(fm - 1) % 12] + ' ' + fy,
+          curYear:  null,
+          cmpYear:  null,
+          forecast: f.forecast,
+          fc_low:   f.forecast_low,
+          fc_high:  f.forecast_high,
+        })
+      }
+    })
+  }
+
+  return rows
 }
 
-// ── QUARTERLY view: Q1–Q4 two-bar + forecast slots ───────────────────────────
-// Aggregates monthly raw data into quarters.
-// For QTD, curYear only shows completed quarters up to the selected quarter.
+// ── QUARTERLY view: Q1–Q4 two-line + forecast ────────────────────────────────
+// Always a line chart, just with 4 points instead of 12.
 function buildQuarterlyData(rawData, forecast, timePeriod, accumType) {
   var curYear  = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
   var cmpYear  = curYear - 1
   var selMonth = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
-  // Which quarter are we in?
   var cutoffQ  = Math.ceil(selMonth / 3)
 
   var byYM = indexByYearMonth(rawData)
 
-  // Aggregate months → quarters
   function quarterVal(year, qIdx) {
-    // qIdx 0..3 → months 1-3, 4-6, 7-9, 10-12
     var months = [qIdx * 3 + 1, qIdx * 3 + 2, qIdx * 3 + 3]
     var vals   = months.map(function(m) { return byYM[year + '-' + m] }).filter(function(v) { return v !== undefined && !isNaN(v) })
     if (!vals.length) return null
-    // point_in_time KPIs: average the quarter; cumulative: sum
     return accumType === 'point_in_time'
       ? vals.reduce(function(a, b) { return a + b }, 0) / vals.length
       : vals.reduce(function(a, b) { return a + b }, 0)
   }
 
-  // Build quarterly forecast series for the generate-forecast API
-  // (We aggregate monthly forecasts into quarters too)
-  var fcByPeriod = {}
+  var rows = QUARTERS.map(function(name, qi) {
+    var qNum = qi + 1
+    return {
+      label:    name,
+      curYear:  qNum <= cutoffQ ? quarterVal(curYear, qi) : null,
+      cmpYear:  quarterVal(cmpYear, qi),
+      forecast: null,
+      fc_low:   null,
+      fc_high:  null,
+    }
+  })
+
+  // Slot quarterly forecast points
   if (forecast && forecast.forecasts) {
-    // Group forecast months into quarters
-    var qAgg = {}
     forecast.forecasts.forEach(function(f) {
-      var parts = String(f.period || '').split('-')
-      if (parts.length < 2) return
-      var y = parseInt(parts[0]); var m = parseInt(parts[1])
-      if (isNaN(y) || isNaN(m)) return
-      var q = Math.ceil(m / 3)
-      var key = y + '-Q' + q
-      if (!qAgg[key]) qAgg[key] = { sum: 0, count: 0, lo: 0, hi: 0 }
-      qAgg[key].sum   += f.forecast   || 0
-      qAgg[key].lo    += f.forecast_low  || 0
-      qAgg[key].hi    += f.forecast_high || 0
-      qAgg[key].count += 1
-    })
-    Object.keys(qAgg).forEach(function(key) {
-      var a = qAgg[key]
-      fcByPeriod[key] = {
-        v:  accumType === 'point_in_time' ? a.sum / a.count : a.sum,
-        lo: accumType === 'point_in_time' ? a.lo  / a.count : a.lo,
-        hi: accumType === 'point_in_time' ? a.hi  / a.count : a.hi,
+      // forecast period for quarterly series is like '2024-Q3'
+      var parts = String(f.period || '').split('-Q')
+      if (parts.length < 2) {
+        // fallback: monthly period — compute quarter
+        var mParts = String(f.period || '').split('-')
+        if (mParts.length < 2) return
+        var fy = parseInt(mParts[0]); var fm = parseInt(mParts[1])
+        if (isNaN(fy) || isNaN(fm)) return
+        if (fy !== curYear) return
+        var qi = Math.ceil(fm / 3) - 1
+        if (qi >= 0 && qi < 4 && rows[qi].forecast === null) {
+          rows[qi].forecast = f.forecast
+          rows[qi].fc_low   = f.forecast_low
+          rows[qi].fc_high  = f.forecast_high
+        }
+        return
+      }
+      var qy = parseInt(parts[0]); var qq = parseInt(parts[1])
+      if (isNaN(qy) || isNaN(qq)) return
+      if (qy === curYear && qq > cutoffQ && qq <= 4) {
+        rows[qq - 1].forecast = f.forecast
+        rows[qq - 1].fc_low   = f.forecast_low
+        rows[qq - 1].fc_high  = f.forecast_high
       }
     })
   }
 
-  return QUARTERS.map(function(name, qi) {
-    var qNum   = qi + 1
-    var fcKey  = curYear + '-Q' + qNum
-    var fc     = fcByPeriod[fcKey]
-    var curVal = quarterVal(curYear, qi)
-    return {
-      label:    name,
-      curYear:  qNum <= cutoffQ ? curVal : null,
-      cmpYear:  quarterVal(cmpYear, qi),
-      forecast: fc ? fc.v  : null,
-      fc_low:   fc ? fc.lo : null,
-      fc_high:  fc ? fc.hi : null,
-    }
-  })
+  return rows
 }
 
 export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimulate, onTrendData }) {
@@ -439,30 +457,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         </div>
       )}
 
-      {/* ── QTD: Grouped Bar Chart ───────────────────────────────────── */}
-      {dataState === 'done' && trendData.length > 0 && isQTD && (
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }} barGap={4}>
-            <CartesianGrid strokeDasharray="1 6" stroke="rgba(56,140,255,0.07)" vertical={false} />
-            <XAxis dataKey="label" tick={axStyle} axisLine={false} tickLine={false} />
-            <YAxis tick={axStyle} width={62} tickFormatter={function(v) { return fmt(v) + (unit ? ' ' + unit : '') }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
-              if (v === null || v === undefined) return null
-              return [fmt(v) + (unit ? ' ' + unit : ''), n]
-            }} />
-            <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-            {/* Comparison year — muted */}
-            <Bar dataKey="cmpYear" name={cmpYearLabel} fill={'rgba(' + hexToRgb(color) + ',0.3)'} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={28} />
-            {/* Current year — solid */}
-            <Bar dataKey="curYear" name={curYearLabel} fill={'rgba(' + hexToRgb(color) + ',0.8)'} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={28} />
-            {/* Forecast — amber */}
-            {hasForecast && <Bar dataKey="forecast" name="Forecast" fill="rgba(240,160,48,0.5)" stroke={colorFc} strokeWidth={0.5} strokeDasharray="4 2" radius={[2,2,0,0]} maxBarSize={28} />}
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-
-      {/* ── YTD/MTD: Two-Line Chart ──────────────────────────────────── */}
-      {dataState === 'done' && trendData.length > 0 && !isQTD && (
+      {/* ── Line Chart — works for YTD, MTD, and QTD ───────────────── */}
+      {dataState === 'done' && trendData.length > 0 && (
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="1 6" stroke="rgba(56,140,255,0.07)" vertical={false} />
@@ -473,22 +469,22 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
               return [fmt(v) + (unit ? ' ' + unit : ''), n]
             }} />
             <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-            {/* Comparison year — dashed, muted */}
+            {/* Comparison year/period — dashed, muted */}
             <Line type="monotone" dataKey="cmpYear" name={cmpYearLabel}
               stroke={color} strokeWidth={1.5} strokeDasharray="5 3" strokeOpacity={0.45}
               dot={{ r: 2, fill: color, strokeWidth: 0, fillOpacity: 0.45 }}
               activeDot={{ r: 4 }} connectNulls={false} />
-            {/* Current year — solid */}
+            {/* Current year/period — solid */}
             <Line type="monotone" dataKey="curYear" name={curYearLabel}
               stroke={color} strokeWidth={2.5}
               dot={{ r: 3, fill: color, strokeWidth: 0 }}
               activeDot={{ r: 5, fill: color, stroke: 'var(--bg)', strokeWidth: 2 }}
               connectNulls={false} />
-            {/* Forecast — amber dashed */}
+            {/* Forecast — amber dashed, connects from last actual point */}
             {hasForecast && (
               <Line type="monotone" dataKey="forecast" name="Forecast"
                 stroke={colorFc} strokeWidth={2} strokeDasharray="6 3"
-                dot={{ r: 3, fill: colorFc, strokeWidth: 0 }}
+                dot={{ r: 3.5, fill: colorFc, strokeWidth: 0 }}
                 activeDot={{ r: 5 }} connectNulls={true} />
             )}
           </LineChart>
@@ -536,12 +532,4 @@ function buildQuarterlySeriesForForecast(rawData, timePeriod) {
     }
   })
   return result
-}
-
-// Convert hex color to RGB string for rgba()
-function hexToRgb(hex) {
-  var r = parseInt(hex.slice(1,3), 16)
-  var g = parseInt(hex.slice(3,5), 16)
-  var b = parseInt(hex.slice(5,7), 16)
-  return r + ',' + g + ',' + b
 }
