@@ -1,4 +1,5 @@
 import { query } from '../../../lib/db'
+import { FISCAL_START_MONTH } from '../../../lib/fiscal-config'
 
 export async function POST(request) {
   var body
@@ -10,9 +11,9 @@ export async function POST(request) {
   var fieldName        = body.fieldName
   var accumulationType = body.accumulationType || 'cumulative'
   var yearsBack        = body.yearsBack || 3
-  // Resolved year/month field names — default to 'year'/'month' for backward compat
   var yf               = body.yearField  || 'year'
   var mf               = body.monthField || 'month'
+  var fiscal           = /fiscal/i.test(yf)
 
   if (!datasetId || !fieldName) {
     return Response.json({ error: 'datasetId and fieldName are required.' }, { status: 400 })
@@ -20,7 +21,6 @@ export async function POST(request) {
 
   var agg = accumulationType === 'point_in_time' ? 'AVG' : 'SUM'
 
-  // Get year range using the resolved year field
   var yearRangeSQL = [
     'SELECT',
     "  MIN((data->>'" + yf + "')::integer) AS min_year,",
@@ -44,7 +44,6 @@ export async function POST(request) {
     maxYear - yearsBack
   )
 
-  // Fetch monthly aggregated trend using resolved field names
   var trendSQL = [
     'SELECT',
     "  CONCAT(data->>'" + yf + "', '-', LPAD(CAST((data->>'" + mf + "')::integer AS TEXT), 2, '0')) AS period,",
@@ -64,7 +63,11 @@ export async function POST(request) {
     var filtered = rows.filter(function(r) {
       return r.period && r.value !== null && r.value !== undefined
     })
-    return Response.json({ data: filtered, fieldName, agg, minYear, maxYear })
+    return Response.json({
+      data: filtered, fieldName, agg, minYear, maxYear,
+      fiscal:           fiscal,
+      fiscalStartMonth: FISCAL_START_MONTH,
+    })
   } catch (err) {
     console.error('fetch-trend error:', err.message)
     return Response.json({ error: 'Query failed: ' + err.message }, { status: 500 })
