@@ -416,7 +416,7 @@ export async function POST(request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         max_tokens: 6000,
         temperature: 0.15,
         response_format: { type: 'json_object' },
@@ -448,13 +448,15 @@ export async function POST(request) {
 
     console.log('=== Queries generated: ' + queries.length)
 
+    var usage = json.usage || {}
     return Response.json({
       queries:     queries,
-      model:       'gpt-4o-mini',
+      model:       'gpt-4o',
       metadata:    metaRows,
       timePeriod:  timePeriod,
       periodInfo:  { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel },
-      preAnalysis: preAnalysis,  // returned for debugging / future use
+      preAnalysis: preAnalysis,
+      usage:       { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' },
     })
   } catch (err) {
     console.error('generate-queries error:', err.message)
