@@ -51,16 +51,22 @@ export async function GET() {
         filters_applicable TEXT,
         time_grain TEXT,
         benchmark TEXT,
-        accumulation_type TEXT
+        accumulation_type TEXT,
+        is_output TEXT DEFAULT 'Y',
+        favorable_direction TEXT
       )
     `)
 
-    // Safe migration — add accumulation_type if upgrading from older schema
+    // Safe migrations — add new columns if upgrading from older schema
     try {
       await execute(`ALTER TABLE metadata_rows ADD COLUMN IF NOT EXISTS accumulation_type TEXT`)
-    } catch (e) {
-      // Column already exists on some Postgres versions that don't support IF NOT EXISTS
-    }
+    } catch (e) {}
+    try {
+      await execute(`ALTER TABLE metadata_rows ADD COLUMN IF NOT EXISTS is_output TEXT DEFAULT 'Y'`)
+    } catch (e) {}
+    try {
+      await execute(`ALTER TABLE metadata_rows ADD COLUMN IF NOT EXISTS favorable_direction TEXT`)
+    } catch (e) {}
 
     return Response.json({ message: 'All tables created successfully. Your database is ready.' })
   } catch (err) {
