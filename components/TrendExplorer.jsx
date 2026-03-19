@@ -11,6 +11,24 @@ var MONTHS   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 var QUARTERS = ['Q1','Q2','Q3','Q4']
 var P = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 
+// Convert a fiscal month (1–12) to a calendar month name
+// e.g. fm=1, start=11 → 'Nov', fm=3, start=11 → 'Jan'
+function fiscalMonthName(fm, fiscalStartMonth) {
+  var calMonth = ((fiscalStartMonth - 1 + fm - 1) % 12) + 1
+  return MONTHS[calMonth - 1]
+}
+
+// Build a short X-axis label for a fiscal month including the calendar year suffix
+// e.g. fm=3 (Jan), asOfCalYear=2026, asOfCalMonth=2, start=11 → 'Jan-26'
+function fiscalMonthLabel(asOfCalYear, asOfCalMonth, fm, fiscalStartMonth) {
+  var calMonth = ((fiscalStartMonth - 1 + fm - 1) % 12) + 1
+  // if calMonth < fiscalStartMonth it has crossed into the next calendar year
+  var calYear = calMonth < fiscalStartMonth
+    ? (asOfCalMonth >= fiscalStartMonth ? asOfCalYear + 1 : asOfCalYear)
+    : (asOfCalMonth >= fiscalStartMonth ? asOfCalYear : asOfCalYear - 1)
+  return MONTHS[calMonth - 1] + '-' + String(calYear).slice(2)
+}
+
 var ttStyle = {
   background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)',
   borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px',
@@ -85,16 +103,23 @@ function indexByYearMonth(rawData) {
   return idx
 }
 
-// ── COMPARISON MODE: Jan–Dec (or Q1–Q4) with curYear vs cmpYear lines ────────
-function buildComparisonData(rawData, timePeriod, accType) {
-  var curYear     = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
-  var cmpYear     = curYear - 1
-  var cutoffMonth = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
+function buildComparisonData(rawData, timePeriod, accType, fiscalCtx) {
+  var calYear     = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
+  var calMonth    = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
   var isQTD       = timePeriod && timePeriod.viewType === 'QTD'
+  var fiscal      = fiscalCtx && fiscalCtx.fiscal
+  var fsm         = (fiscalCtx && fiscalCtx.fiscalStartMonth) || 11
   var byYM        = indexByYearMonth(rawData)
 
+  // Translate as-of calendar date to fiscal coordinates
+  var cutoffFM = fiscal ? ((calMonth - fsm + 12) % 12) + 1 : calMonth
+  var curYear  = fiscal
+    ? (calMonth >= fsm ? calYear + 1 : calYear)
+    : calYear
+  var cmpYear  = curYear - 1
+
   if (isQTD) {
-    var cutoffQ = Math.ceil(cutoffMonth / 3)
+    var cutoffQ = Math.ceil(cutoffFM / 3)
     return QUARTERS.map(function(name, qi) {
       var qNum   = qi + 1
       var months = [qi*3+1, qi*3+2, qi*3+3]
@@ -105,78 +130,81 @@ function buildComparisonData(rawData, timePeriod, accType) {
           ? vals.reduce(function(a,b){return a+b},0) / vals.length
           : vals.reduce(function(a,b){return a+b},0)
       }
-      return {
-        label:   name,
-        curYear: qNum <= cutoffQ ? qVal(curYear) : null,
-        cmpYear: qVal(cmpYear),
-      }
+      var label = fiscal
+        ? ('FQ' + qNum + ' (' + fiscalMonthName(qi*3+1, fsm) + '–' + fiscalMonthName(Math.min(qi*3+3,12), fsm) + ')')
+        : name
+      return { label, curYear: qNum <= cutoffQ ? qVal(curYear) : null, cmpYear: qVal(cmpYear) }
     })
   }
 
-  return MONTHS.map(function(name, i) {
-    var m = i + 1
+  return Array.from({ length: 12 }, function(_, i) {
+    var fm = i + 1
+    var label = fiscal
+      ? fiscalMonthLabel(calYear, calMonth, fm, fsm)
+      : MONTHS[i]
     return {
-      label:   name,
-      curYear: m <= cutoffMonth ? (byYM[curYear+'-'+m] !== undefined ? byYM[curYear+'-'+m] : null) : null,
-      cmpYear: byYM[cmpYear+'-'+m] !== undefined ? byYM[cmpYear+'-'+m] : null,
+      label,
+      curYear: fm <= cutoffFM ? (byYM[curYear+'-'+fm] !== undefined ? byYM[curYear+'-'+fm] : null) : null,
+      cmpYear: byYM[cmpYear+'-'+fm] !== undefined ? byYM[cmpYear+'-'+fm] : null,
     }
   })
 }
 
-// ── FORECAST MODE: chronological actual points + forecast appended ────────────
-// Simple and reliable — no slot-matching, just append forecast after last actual.
-function buildForecastData(rawData, forecast, timePeriod) {
-  var curYear     = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
-  var cutoffMonth = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
+function buildForecastData(rawData, forecast, timePeriod, fiscalCtx) {
+  var calYear     = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
+  var calMonth    = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
   var isQTD       = timePeriod && timePeriod.viewType === 'QTD'
+  var fiscal      = fiscalCtx && fiscalCtx.fiscal
+  var fsm         = (fiscalCtx && fiscalCtx.fiscalStartMonth) || 11
 
-  // Filter to current year only, up to cutoff
+  var cutoffFM = fiscal ? ((calMonth - fsm + 12) % 12) + 1 : calMonth
+  var curFY    = fiscal ? (calMonth >= fsm ? calYear + 1 : calYear) : calYear
+
   var actual = (rawData || [])
     .filter(function(row) {
       var parts = String(row.period || '').split('-')
       if (parts.length < 2) return false
       var y = parseInt(parts[0]); var m = parseInt(parts[1])
       if (isNaN(y) || isNaN(m)) return false
-      if (isQTD) {
-        var cutoffQ = Math.ceil(cutoffMonth / 3)
-        return y === curYear && Math.ceil(m / 3) <= cutoffQ
-      }
-      return y === curYear && m <= cutoffMonth
+      if (isQTD) return y === curFY && Math.ceil(m / 3) <= Math.ceil(cutoffFM / 3)
+      return y === curFY && m <= cutoffFM
     })
     .map(function(row) {
       var parts = String(row.period || '').split('-')
-      var y2 = parseInt(parts[0]); var m2 = parseInt(parts[1])
-      var label = isQTD ? ('Q' + Math.ceil(m2 / 3)) : (MONTHS[m2 - 1] + '-' + String(y2).slice(2))
-      return { label: label, actual: parseFloat(row.value), forecast: null, fc_low: null, fc_high: null }
+      var fm = parseInt(parts[1])
+      var label = isQTD
+        ? ('Q' + Math.ceil(fm / 3))
+        : fiscal
+          ? fiscalMonthLabel(calYear, calMonth, fm, fsm)
+          : (MONTHS[fm - 1] + '-' + String(curFY).slice(2))
+      return { label, actual: parseFloat(row.value), forecast: null, fc_low: null, fc_high: null }
     })
 
-  // Deduplicate QTD (multiple months map to same quarter label)
   if (isQTD) {
     var qMap = {}
     actual.forEach(function(row) {
-      if (!qMap[row.label]) qMap[row.label] = { sum: 0, count: 0 }
-      qMap[row.label].sum   += row.actual
-      qMap[row.label].count += 1
+      if (!qMap[row.label]) qMap[row.label] = { sum: 0 }
+      qMap[row.label].sum += row.actual
     })
     actual = QUARTERS
       .filter(function(q) { return qMap[q] })
       .map(function(q) { return { label: q, actual: qMap[q].sum, forecast: null, fc_low: null, fc_high: null } })
   }
 
-  // Append forecast points directly after the last actual
   if (forecast && forecast.forecasts && forecast.forecasts.length > 0) {
     forecast.forecasts.forEach(function(f, i) {
       var label
       if (isQTD) {
-        // Next quarter label
         var lastQ = actual.length > 0 ? parseInt(actual[actual.length - 1].label.replace('Q','')) : 0
         label = 'Q' + (lastQ + i + 1)
       } else {
         var parts = String(f.period || '').split('-')
         var fy2 = parseInt(parts[0]); var fm2 = parseInt(parts[1])
-        label = !isNaN(fm2) ? (MONTHS[fm2 - 1] + '-' + String(fy2).slice(2)) : f.period
+        label = fiscal
+          ? fiscalMonthLabel(calYear, calMonth, fm2 + i + 1 > 12 ? fm2 : fm2, fsm)
+          : (!isNaN(fm2) ? (MONTHS[fm2 - 1] + '-' + String(fy2).slice(2)) : f.period)
       }
-      actual.push({ label: label, actual: null, forecast: f.forecast, fc_low: f.forecast_low, fc_high: f.forecast_high })
+      actual.push({ label, actual: null, forecast: f.forecast, fc_low: f.forecast_low, fc_high: f.forecast_high })
     })
   }
 
@@ -230,7 +258,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           setCache(function(p) {
             if (p[field]) return p
             var n = Object.assign({}, p)
-            n[field] = { data: j.data, forecast: null, sql: buildTrendSQL(datasetId, field, agg, yf, mf) }
+            n[field] = { data: j.data, forecast: null, sql: buildTrendSQL(datasetId, field, agg, yf, mf),
+              fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }
             return n
           })
           onTrendData(field, j.data, meta)
@@ -260,7 +289,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           if (j.error) throw new Error(j.error)
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
           if (onTrendData) onTrendData(selectedField, j.data || [], selectedMeta)
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+            fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done')
         })
         .catch(function(err) { setDataError(err.message); setDataState('error') })
@@ -322,7 +352,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
         if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
         if (trendData.length < 3) {
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+            fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done'); return
         }
         var seriesForFc = isQTD ? buildQtrSeriesForFc(trendData) : trendData
@@ -345,7 +376,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
             var fcResult = (fcJson && fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
+            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+              fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
             setDataState('done')
           })
       })
@@ -358,15 +390,27 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
   var forecast  = (cached && cached.forecast && cached.forecast !== false) ? cached.forecast : null
   var cachedSQL = cached && cached.sql
   var accType   = (selectedMeta && selectedMeta.accumulation_type) || 'cumulative'
+  var fiscalCtx = { fiscal: cached && cached.fiscal, fiscalStartMonth: cached && cached.fiscalStartMonth,  }
+
   var curYear   = timePeriod ? parseInt(timePeriod.year) : new Date().getFullYear()
   var unit      = (selectedMeta && selectedMeta.unit) || ''
   var color     = P[kpiOptions.indexOf(selectedMeta) % P.length]
   var periodLabel = isQTD ? 'QTD' : (timePeriod && timePeriod.viewType) || 'YTD'
 
+  // Fiscal-aware legend labels
+  var isFiscal = fiscalCtx && fiscalCtx.fiscal
+  var fsm = (fiscalCtx && fiscalCtx.fiscalStartMonth) || 11
+  var calMonth = timePeriod ? parseInt(timePeriod.month) : 12
+  var fiscalCurYear = isFiscal
+    ? (calMonth >= fsm ? curYear + 1 : curYear)
+    : curYear
+  var curYearLabel = isFiscal ? 'FY' + fiscalCurYear       : String(curYear)
+  var cmpYearLabel = isFiscal ? 'FY' + (fiscalCurYear - 1) : String(curYear - 1)
+
   // Build chart data based on mode
   var chartData = chartMode === 'forecast'
-    ? buildForecastData(trendData, forecast, timePeriod)
-    : buildComparisonData(trendData, timePeriod, accType)
+    ? buildForecastData(trendData, forecast, timePeriod, fiscalCtx)
+    : buildComparisonData(trendData, timePeriod, accType, fiscalCtx)
 
   // Stats always from actual data
   var actualVals = chartMode === 'forecast'
@@ -541,13 +585,13 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
 
             {/* COMPARISON MODE: two year lines */}
             {chartMode === 'comparison' && (
-              <Line type="monotone" dataKey="cmpYear" name={String(curYear - 1)}
+              <Line type="monotone" dataKey="cmpYear" name={cmpYearLabel}
                 stroke={color} strokeWidth={1.5} strokeDasharray="5 3" strokeOpacity={0.45}
                 dot={{ r: 2, fill: color, strokeWidth: 0, fillOpacity: 0.45 }}
                 activeDot={{ r: 4 }} connectNulls={false} />
             )}
             {chartMode === 'comparison' && (
-              <Line type="monotone" dataKey="curYear" name={String(curYear)}
+              <Line type="monotone" dataKey="curYear" name={curYearLabel}
                 stroke={color} strokeWidth={2.5}
                 dot={{ r: 3, fill: color, strokeWidth: 0 }}
                 activeDot={{ r: 5, fill: color, stroke: 'var(--bg)', strokeWidth: 2 }}
