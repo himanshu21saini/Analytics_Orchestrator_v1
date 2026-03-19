@@ -9,7 +9,7 @@ function fmt(v) {
   return Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2)
 }
 
-export default function KPICard({ title, value, unit, comparisonValue, compLabel, index }) {
+export default function KPICard({ title, value, unit, comparisonValue, compLabel, index, anomalySeverity, favorableDirection }) {
   var delay = ['d1','d2','d3','d4','d5','d6','d1','d2'][index] || 'd1'
 
   var curr = parseFloat(value)
@@ -22,19 +22,21 @@ export default function KPICard({ title, value, unit, comparisonValue, compLabel
     direction = changePct > 0 ? 'up' : changePct < 0 ? 'down' : 'neutral'
   }
 
-  var changeColor = direction === 'up'   ? 'var(--green-text)'
-                  : direction === 'down' ? 'var(--red-text)'
-                  : 'var(--text-tertiary)'
-  var changeBg    = direction === 'up'   ? 'var(--green-light)'
-                  : direction === 'down' ? 'var(--red-light)'
-                  : 'rgba(255,255,255,0.04)'
-  var changeBorder = direction === 'up'  ? 'rgba(16,196,138,0.25)'
-                   : direction === 'down' ? 'rgba(224,85,85,0.25)'
-                   : 'rgba(255,255,255,0.06)'
-  var barColor    = direction === 'up'   ? 'var(--green)'
-                  : direction === 'down' ? 'var(--red)'
-                  : 'var(--accent)'
-  var arrow       = direction === 'up'   ? '↑' : direction === 'down' ? '↓' : ''
+  // favorable_direction: 'i' = increase good (default), 'd' = decrease good
+  // When 'd': up is bad (red), down is good (green) — reverse the color mapping
+  var isGoodUp = !favorableDirection || favorableDirection === 'i'
+  var isGood   = direction === 'neutral' ? null
+               : (isGoodUp ? direction === 'up' : direction === 'down')
+
+  var changeColor  = isGood === null ? 'var(--text-tertiary)'
+                   : isGood          ? 'var(--green-text)' : 'var(--red-text)'
+  var changeBg     = isGood === null ? 'rgba(255,255,255,0.04)'
+                   : isGood          ? 'var(--green-light)' : 'var(--red-light)'
+  var changeBorder = isGood === null ? 'rgba(255,255,255,0.06)'
+                   : isGood          ? 'rgba(16,196,138,0.25)' : 'rgba(224,85,85,0.25)'
+  var barColor     = isGood === null ? 'var(--accent)'
+                   : isGood          ? 'var(--green)' : 'var(--red)'
+  var arrow        = direction === 'up' ? '↑' : direction === 'down' ? '↓' : ''
 
   return (
     <div
@@ -82,6 +84,17 @@ export default function KPICard({ title, value, unit, comparisonValue, compLabel
         borderRight: '1px solid rgba(0,200,240,0.15)',
         borderRadius: '0 4px 0 0',
       }} />
+
+      {/* Anomaly severity badge */}
+      {anomalySeverity && (
+        <div style={{
+          position: 'absolute', top: 8, right: 10,
+          width: 8, height: 8, borderRadius: '50%',
+          background: anomalySeverity === 'high' ? '#E05555' : anomalySeverity === 'medium' ? '#F0A030' : '#00C8F0',
+          boxShadow: '0 0 6px ' + (anomalySeverity === 'high' ? '#E05555' : anomalySeverity === 'medium' ? '#F0A030' : '#00C8F0'),
+          animation: 'glowPulse 2s ease-in-out infinite',
+        }} />
+      )}
 
       {/* Label */}
       <p style={{
