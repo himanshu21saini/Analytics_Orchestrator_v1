@@ -367,73 +367,76 @@ export default function Dashboard({ session }) {
 
       {/* ── Period Banner ─────────────────────────────────────────── */}
       {periodInfo.viewLabel && (
-        <div className="fade-in" style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-              {periodInfo.viewLabel}
-            </h2>
-            <p style={{ fontSize: 12, color: 'var(--text-accent)', marginTop: 4, fontFamily: 'var(--font-body)', letterSpacing: '0.06em' }}>
-              {periodInfo.cmpLabel}
-              <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
-              {visibleKpis.length} indicators
-              <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
-              {trendResults.length} trends
-              <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
-              {chartResults.length} charts
-            </p>
+        <div className="fade-in" style={{ marginBottom: 24 }}>
+
+          {/* Top row: title + buttons */}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                {periodInfo.viewLabel}
+              </h2>
+              <p style={{ fontSize: 12, color: 'var(--text-accent)', marginTop: 4, fontFamily: 'var(--font-body)', letterSpacing: '0.06em' }}>
+                {periodInfo.cmpLabel}
+                <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
+                {visibleKpis.length} indicators
+                <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
+                {trendResults.length} trends
+                <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
+                {chartResults.length} charts
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={handleGenerateDecisions}
+                disabled={decisionState === 'loading'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                  background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)',
+                  border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'),
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                  color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0',
+                  cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+                  boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)',
+                }}
+              >
+                {decisionState === 'loading'
+                  ? <><span className="spinner" /> Analysing...</>
+                  : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>
+                }
+              </button>
+
+              <button
+                onClick={handleGenerateSummary}
+                disabled={summaryState === 'loading'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                  background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+                  border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                  color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
+                  cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+                  boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
+                }}
+              >
+                {summaryState === 'loading'
+                  ? <><span className="spinner" /> Composing...</>
+                  : <>{summaryState === 'done' ? 'Regenerate Report' : 'Generate Report'}</>
+                }
+              </button>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button
-              onClick={handleGenerateDecisions}
-              disabled={decisionState === 'loading'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)',
-                border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'),
-                borderRadius: 'var(--radius-md)',
-                fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0',
-                cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer',
-                fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
-                boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)',
-              }}
-            >
-              {decisionState === 'loading'
-                ? <><span className="spinner" /> Analysing...</>
-                : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>
-              }
-            </button>
-
-            <button
-              onClick={handleGenerateSummary}
-              disabled={summaryState === 'loading'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
-                border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
-                borderRadius: 'var(--radius-md)',
-                fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
-                cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
-                fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
-                boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
-              }}
-            >
-              {summaryState === 'loading'
-                ? <><span className="spinner" /> Composing...</>
-                : <>{summaryState === 'done' ? 'Regenerate Report' : 'Generate Report'}</>
-              }
-            </button>
-          </div>
-        </div>
-
-        {/* Token meter — shown as soon as any LLM call has been made */}
-        {tokenCalls.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <TokenMeter calls={tokenCalls} />
-          </div>
-        )}
+          {/* Token meter — always visible once dashboard loads (queries usage seeded from SetupScreen) */}
+          {tokenCalls.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <TokenMeter calls={tokenCalls} />
+            </div>
+          )}
         </div>
       )}
 
