@@ -86,8 +86,8 @@ export default function SetupScreen({ onReady }) {
   var [error,        setError]        = useState('')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
-  // User context
-  var [contextText,  setContextText]  = useState('')
+  // User context — uncontrolled textarea (ref) to avoid re-render on every keystroke
+  var contextRef = useRef()
   var [extracting,   setExtracting]   = useState(false)
   var [extracted,    setExtracted]    = useState(null)   // { filters, kpi_focus, explanation }
   var [showConfirm,  setShowConfirm]  = useState(false)
@@ -134,6 +134,7 @@ export default function SetupScreen({ onReady }) {
 
   async function handleBuild() {
     setError('')
+    var contextText = (contextRef.current && contextRef.current.value) || ''
     // If context entered and confirmation not yet shown — extract first
     if (contextText.trim() && !showConfirm) {
       setExtracting(true)
@@ -456,8 +457,8 @@ export default function SetupScreen({ onReady }) {
         {/* Section 3: User Context */}
         <SectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
           <textarea
-            value={contextText}
-            onChange={function(e) { setContextText(e.target.value); setShowConfirm(false); setExtracted(null) }}
+            ref={contextRef}
+            defaultValue=""
             placeholder={'e.g. "I am head of West Region and my focus is on Revenue"\n     "Show me only Corporate segment performance"'}
             style={{
               width: '100%', minHeight: 72, padding: '10px 12px',
@@ -533,7 +534,7 @@ export default function SetupScreen({ onReady }) {
                 }}
               >Build with this context</button>
               <button
-                onClick={function() { setShowConfirm(false); setExtracted(null); setContextText(''); doBuild(null) }}
+                onClick={function() { setShowConfirm(false); setExtracted(null); if (contextRef.current) contextRef.current.value = ''; doBuild(null) }}
                 style={{
                   flex: 1, padding: '10px', borderRadius: 'var(--radius-md)',
                   background: 'transparent', border: '1px solid var(--border)',
