@@ -81,7 +81,7 @@ export default function SetupScreen({ onReady }) {
       var rqRes = await fetch('/api/run-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queries: gqJson.queries }) })
       var rqJson = await rqRes.json()
       if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
-      onReady({ datasetId: finalDatasetId, metadataSetId: finalMetaId, queries: gqJson.queries, queryResults: rqJson.results, metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo })
+      onReady({ datasetId: finalDatasetId, metadataSetId: finalMetaId, queries: gqJson.queries, queryResults: rqJson.results, metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo, initialUsage: gqJson.usage || null })
     } catch (err) { setError(err.message); setWorking(false); setProgress('') }
   }
 
