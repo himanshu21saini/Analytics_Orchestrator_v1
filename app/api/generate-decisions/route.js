@@ -97,17 +97,20 @@ export async function POST(request) {
       return { title: r.title, chart_type: r.chart_type, top_rows: top }
     })
 
-  var metaSummary = (metadata || []).map(function(m) {
-    return {
-      field:      m.field_name,
-      display:    m.display_name,
-      type:       m.type,
-      unit:       m.unit,
-      definition: m.definition,
-      benchmark:  m.benchmark,
-      priority:   m.business_priority,
-    }
-  })
+  var metaSummary = (metadata || [])
+    .filter(function(m) { return m.is_output !== 'N' })
+    .map(function(m) {
+      return {
+        field:               m.field_name,
+        display:             m.display_name,
+        type:                m.type,
+        unit:                m.unit,
+        definition:          m.definition,
+        benchmark:           m.benchmark,
+        priority:            m.business_priority,
+        favorable_direction: m.favorable_direction || 'i',
+      }
+    })
 
   var systemMsg = [
     'You are a senior banking decision intelligence analyst.',
@@ -137,14 +140,21 @@ export async function POST(request) {
     '',
     '## YOUR TASK',
     '',
+    '## FAVORABLE DIRECTION RULE',
+    'Each KPI in the metadata has favorable_direction: "i" = increase is good, "d" = decrease is good.',
+    'Apply this when assessing whether a change is positive or negative:',
+    '  - favorable_direction="i": rising value = good, falling value = bad (e.g. Revenue, NII, Customers)',
+    '  - favorable_direction="d": falling value = good, rising value = bad (e.g. NPA Ratio, Cost-to-Income, Expenses)',
+    'NEVER flag an improving trend as a risk. ALWAYS use favorable_direction to determine what is "worse".',
+    '',
     'STEP 1 — ANOMALY SCAN',
     'For every KPI: compare current vs previous and vs benchmark.',
-    'ALSO check trend data: if a KPI is accelerating downward or upward, flag it even if the point-in-time value looks acceptable.',
+    'Use favorable_direction from metadata to determine if a change is good or bad.',
     'Flag anything that is:',
-    '  - More than 10% worse than prior period',
-    '  - Breaching its benchmark',
-    '  - Showing an accelerating negative trend (use trend_analysis above — check accelerating: true + direction: down)',
-    '  - Showing a long-run deterioration (overall_change_pct strongly negative over many periods)',
+    '  - More than 10% WORSE than prior period (apply favorable_direction to determine worse)',
+    '  - Breaching its benchmark in the wrong direction',
+    '  - Showing an accelerating unfavorable trend',
+    '  - Showing a long-run deterioration in the unfavorable direction',
     '',
     'STEP 2 — DECISION RECOMMENDATIONS',
     'For each significant signal, produce ONE clear decision card.',
