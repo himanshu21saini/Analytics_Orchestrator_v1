@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 
 var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
-var THIS_YEAR   = new Date().getFullYear()
-var YEARS       = [THIS_YEAR - 3, THIS_YEAR - 2, THIS_YEAR - 1, THIS_YEAR]
 
 var COMPARISON_OPTIONS = {
   YTD: [{ value: 'YoY', label: 'YoY' }],
@@ -59,6 +57,15 @@ function detectPeriodPairs(ymRows) {
   return pairs
 }
 
+// Build list of months for the slider: 2 years back to current month
+var TODAY      = new Date()
+var SLIDER_MONTHS = []
+for (var si = 23; si >= 0; si--) {
+  var sd = new Date(TODAY.getFullYear(), TODAY.getMonth() - si, 1)
+  SLIDER_MONTHS.push({ year: sd.getFullYear(), month: sd.getMonth() + 1 })
+}
+var SLIDER_DEFAULT = SLIDER_MONTHS.length - 1  // latest month
+
 export default function SetupScreen({ onReady }) {
   var [datasets,     setDatasets]     = useState([])
   var [metaSets,     setMetaSets]     = useState([])
@@ -72,16 +79,19 @@ export default function SetupScreen({ onReady }) {
   var [dataName,     setDataName]     = useState('')
   var [metaName,     setMetaName]     = useState('')
   var [viewType,     setViewType]     = useState('YTD')
-  var [selYear,      setSelYear]      = useState(THIS_YEAR - 1)
-  var [selMonth,     setSelMonth]     = useState(12)
+  var [sliderIdx,    setSliderIdx]    = useState(SLIDER_DEFAULT)
   var [compType,     setCompType]     = useState('YoY')
   var [working,      setWorking]      = useState(false)
   var [progress,     setProgress]     = useState('')
   var [error,        setError]        = useState('')
-  // Period field resolution
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
   var dataRef = useRef(); var metaRef = useRef()
+
+  // Derive selYear and selMonth from slider index
+  var selYearMonth = SLIDER_MONTHS[sliderIdx] || SLIDER_MONTHS[SLIDER_DEFAULT]
+  var selYear  = selYearMonth.year
+  var selMonth = selYearMonth.month
 
   useEffect(function() { loadLists() }, [])
   useEffect(function() {
@@ -348,17 +358,33 @@ export default function SetupScreen({ onReady }) {
                 {allowedComp.map(function(opt) { return <Chip key={opt.value} active={compType===opt.value} onClick={function() { setCompType(opt.value) }}>{opt.value}</Chip> })}
               </div>
             </div>
-            <div>
-              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10, fontFamily: 'var(--font-body)' }}>Year</p>
-              <select value={selYear} onChange={function(e) { setSelYear(parseInt(e.target.value)) }} style={selectStyle}>
-                {YEARS.map(function(y) { return <option key={y} value={y}>{y}</option> })}
-              </select>
+          </div>
+
+          {/* As-of date slider */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-body)' }}>As-of date</p>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>
+                {MONTH_NAMES[selMonth - 1]} {selYear}
+              </span>
             </div>
-            <div>
-              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10, fontFamily: 'var(--font-body)' }}>Month</p>
-              <select value={selMonth} onChange={function(e) { setSelMonth(parseInt(e.target.value)) }} style={selectStyle}>
-                {MONTH_NAMES.map(function(name, i) { return <option key={i+1} value={i+1}>{name}</option> })}
-              </select>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="range"
+                min={0}
+                max={SLIDER_MONTHS.length - 1}
+                value={sliderIdx}
+                onChange={function(e) { setSliderIdx(parseInt(e.target.value)) }}
+                style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  {MONTH_NAMES[SLIDER_MONTHS[0].month - 1].slice(0,3)} {SLIDER_MONTHS[0].year}
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  {MONTH_NAMES[SLIDER_MONTHS[SLIDER_MONTHS.length - 1].month - 1].slice(0,3)} {SLIDER_MONTHS[SLIDER_MONTHS.length - 1].year}
+                </span>
+              </div>
             </div>
           </div>
 
