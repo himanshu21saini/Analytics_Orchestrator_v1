@@ -86,6 +86,11 @@ export default function SetupScreen({ onReady }) {
   var [error,        setError]        = useState('')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
+  // User context
+  var [contextText,  setContextText]  = useState('')
+  var [extracting,   setExtracting]   = useState(false)
+  var [extracted,    setExtracted]    = useState(null)   // { filters, kpi_focus, explanation }
+  var [showConfirm,  setShowConfirm]  = useState(false)
   var dataRef = useRef(); var metaRef = useRef()
 
   // Derive selYear and selMonth from slider index
@@ -128,6 +133,35 @@ export default function SetupScreen({ onReady }) {
   }
 
   async function handleBuild() {
+    setError('')
+    // If context entered and confirmation not yet shown — extract first
+    if (contextText.trim() && !showConfirm) {
+      setExtracting(true)
+      try {
+        var metaId = metaMode === 'existing' ? selMeta : null
+        var metaForCtx = []
+        if (metaId) {
+          var mfr = await fetch('/api/metadata-fields?metadataSetId=' + metaId)
+          var mfj = await mfr.json()
+          metaForCtx = mfj.fields || []
+        }
+        var res = await fetch('/api/extract-context', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contextText: contextText.trim(), metadata: metaForCtx }),
+        })
+        var j = await res.json()
+        if (j.error) throw new Error(j.error)
+        setExtracted(j)
+        setShowConfirm(true)
+      } catch(err) { setError('Context extraction failed: ' + err.message) }
+      setExtracting(false)
+      return
+    }
+    await doBuild(showConfirm ? extracted : null)
+  }
+
+  async function doBuild(userContext) {
+    setShowConfirm(false)
     setError(''); var finalDatasetId = selDataset; var finalMetaId = selMeta; setWorking(true)
     try {
       if (dataMode === 'upload') {
@@ -145,36 +179,36 @@ export default function SetupScreen({ onReady }) {
         var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 }); var mj = await mr.json()
         if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
         finalMetaId = String(mj.metadataSet.id)
-
-        // After uploading new metadata, resolve period pairs from it
         var mfRes = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId + '&type=year_month')
         var mfJson = await mfRes.json()
         var newPairs = detectPeriodPairs(mfJson.fields || [])
         setPeriodPairs(newPairs); setSelPairIdx(0)
         await loadLists()
       }
-
-      // Resolve which year/month fields to use
       var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
       var chosenPair  = activePairs[selPairIdx] || activePairs[0]
-
       setProgress('Composing intelligence queries...')
       var timePeriod = {
-        viewType,
-        year:           selYear,
-        month:          selMonth,
-        comparisonType: compType,
-        yearField:      chosenPair.yearField,
-        monthField:     chosenPair.monthField,
+        viewType, year: selYear, month: selMonth, comparisonType: compType,
+        yearField: chosenPair.yearField, monthField: chosenPair.monthField,
       }
-      var gqRes = await fetch('/api/generate-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod }) })
+      var gqRes = await fetch('/api/generate-queries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod, userContext: userContext || null }),
+      })
       var gqJson = await gqRes.json()
       if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
       setProgress('Executing ' + (gqJson.queries ? gqJson.queries.length : '') + ' queries...')
       var rqRes = await fetch('/api/run-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queries: gqJson.queries }) })
       var rqJson = await rqRes.json()
       if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
-      onReady({ datasetId: finalDatasetId, metadataSetId: finalMetaId, queries: gqJson.queries, queryResults: rqJson.results, metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo, initialUsage: gqJson.usage || null })
+      onReady({
+        datasetId: finalDatasetId, metadataSetId: finalMetaId,
+        queries: gqJson.queries, queryResults: rqJson.results,
+        metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo,
+        initialUsage: gqJson.usage || null,
+        userContext: userContext || null,
+      })
     } catch (err) { setError(err.message); setWorking(false); setProgress('') }
   }
 
@@ -419,11 +453,103 @@ export default function SetupScreen({ onReady }) {
           </div>
         </SectionCard>
 
+        {/* Section 3: User Context */}
+        <SectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
+          <textarea
+            value={contextText}
+            onChange={function(e) { setContextText(e.target.value); setShowConfirm(false); setExtracted(null) }}
+            placeholder={'e.g. "I am head of West Region and my focus is on Revenue"\n     "Show me only Corporate segment performance"'}
+            style={{
+              width: '100%', minHeight: 72, padding: '10px 12px',
+              background: 'var(--surface-2)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+              fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical',
+              outline: 'none', lineHeight: 1.6,
+            }}
+            onFocus={function(e) { e.target.style.borderColor = 'var(--accent-border)' }}
+            onBlur={function(e) { e.target.style.borderColor = 'var(--border)' }}
+          />
+          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>
+            The LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> (e.g. Region = West) and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span> from your description. You'll confirm before building.
+          </p>
+        </SectionCard>
+
+        {/* Confirmation modal — shown after context extraction */}
+        {showConfirm && extracted && (
+          <div className="fade-in" style={{
+            background: 'var(--surface)', border: '1px solid var(--accent-border)',
+            borderRadius: 'var(--radius-lg)', padding: '20px 22px', marginBottom: 0,
+            backdropFilter: 'blur(8px)',
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14, fontFamily: 'var(--font-display)' }}>
+              Confirm dashboard context
+            </p>
+
+            {extracted.filters && extracted.filters.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Filters applied</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {extracted.filters.map(function(f, i) {
+                    return (
+                      <span key={i} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>
+                        {f.display || (f.field + ' ' + f.operator + ' ' + f.value)}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {extracted.kpi_focus && extracted.kpi_focus.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>KPI focus (prioritised)</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {extracted.kpi_focus.map(function(k, i) {
+                    return (
+                      <span key={i} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>
+                        {k}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {extracted.explanation && (
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                {extracted.explanation}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={function() { doBuild(extracted) }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: 'var(--radius-md)',
+                  background: 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+                  border: '1px solid var(--accent-border)', color: 'var(--text-accent)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-display)',
+                  letterSpacing: '0.06em',
+                }}
+              >Build with this context</button>
+              <button
+                onClick={function() { setShowConfirm(false); setExtracted(null); setContextText(''); doBuild(null) }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: 'var(--radius-md)',
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer',
+                  fontFamily: 'var(--font-display)', letterSpacing: '0.06em',
+                }}
+              >Reset &amp; build without</button>
+            </div>
+          </div>
+        )}
+
         {/* Build */}
         <div className="fade-up d4">
           <button
             onClick={handleBuild}
-            disabled={!canBuild}
+            disabled={!canBuild || extracting}
             style={{
               width: '100%', padding: '14px 24px',
               background: canBuild
@@ -435,14 +561,15 @@ export default function SetupScreen({ onReady }) {
               color: canBuild ? 'var(--text-accent)' : 'var(--text-tertiary)',
               cursor: canBuild ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              fontFamily: 'var(--font-display)',
-              transition: 'all var(--transition)',
+              fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
               boxShadow: canBuild ? '0 0 20px rgba(0,200,240,0.06)' : 'none',
             }}
           >
-            {working
-              ? <><span className="spinner" /><span style={{ fontSize: 12 }}>{progress || 'Processing...'}</span></>
-              : 'Generate Dashboard'
+            {extracting
+              ? <><span className="spinner" /><span style={{ fontSize: 12 }}>Analysing context...</span></>
+              : working
+                ? <><span className="spinner" /><span style={{ fontSize: 12 }}>{progress || 'Processing...'}</span></>
+                : showConfirm ? 'Confirm above to proceed' : 'Generate Dashboard'
             }
           </button>
 
