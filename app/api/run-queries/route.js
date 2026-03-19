@@ -28,8 +28,12 @@ export async function POST(request) {
         id: q.id,
         title: q.title,
         chart_type: q.chart_type,
-        label_key: q.label_key || 'label',
-        value_key: q.value_key || 'value',
+        label_key:      q.label_key      || 'label',
+        value_key:      q.value_key      || 'value',
+        // Defensively set current_key and comparison_key for bar/kpi charts
+        // LLM sometimes omits these even though the SQL produces the columns
+        current_key:    q.current_key    || (q.chart_type === 'bar' || q.chart_type === 'kpi' ? 'current_value' : undefined),
+        comparison_key: q.comparison_key || (q.chart_type === 'bar' || q.chart_type === 'kpi' ? 'comparison_value' : undefined),
         unit: q.unit || '',
         data: rows,
       })
