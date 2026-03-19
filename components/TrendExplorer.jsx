@@ -187,7 +187,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
   var isQTD = timePeriod && timePeriod.viewType === 'QTD'
 
   var kpiOptions = (metadata || []).filter(function(m) {
-    return m.type === 'kpi' || m.type === 'derived_kpi'
+    return (m.type === 'kpi' || m.type === 'derived_kpi') && m.is_output !== 'N'
   }).sort(function(a, b) {
     var order = { high: 0, medium: 1, low: 2 }
     var paVal = order[(a.business_priority || '').toLowerCase()]
