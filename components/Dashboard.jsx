@@ -51,7 +51,7 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
         padding: '18px 16px 10px',
         gridColumn: fullWidth ? '1 / -1' : 'auto',
         transition: 'border-color var(--transition), box-shadow var(--transition)',
-        position: 'relative', overflow: 'hidden',
+        position: 'relative', overflow: 'visible',
         backdropFilter: 'blur(8px)',
       }}
       onMouseEnter={function(e) {
@@ -279,8 +279,8 @@ export default function Dashboard({ session }) {
     if (ct === 'bar') {
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 28 }} barGap={2}>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data} margin={{ top: 22, right: 8, left: 0, bottom: 28 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
@@ -304,8 +304,8 @@ export default function Dashboard({ session }) {
       var seriesKeys = result.series_keys || Object.keys(data[0] || {}).filter(function(k) { return k !== labelKey })
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 28 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data} margin={{ top: 22, right: 8, left: 0, bottom: 28 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
