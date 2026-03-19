@@ -4,7 +4,7 @@ import { useState } from 'react'
 import {
   BarChart, Bar, AreaChart, Area,
   PieChart, Pie, Cell, ScatterChart, Scatter,
-  XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList,
 } from 'recharts'
 import KPICard from './KPICard'
 import SummaryPanel from './SummaryPanel'
@@ -261,7 +261,6 @@ export default function Dashboard({ session }) {
     var colorA   = PA[idx % PA.length]
     var colorC   = PC[idx % PC.length]
     var badge    = hasComp && periodInfo.cmpLabel ? periodInfo.cmpLabel : null
-    var isFirst  = idx === 0
     var insight  = getInsight(result.id)
     var ct       = result.chart_type
 
@@ -279,16 +278,22 @@ export default function Dashboard({ session }) {
 
     if (ct === 'bar') {
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} fullWidth={isFirst} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }} barGap={2}>
+            <BarChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 28 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-              {hasComp && <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior period'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22} />}
-              <Bar dataKey={curKey} name={periodInfo.viewLabel || 'Current period'} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={hasComp ? 22 : 40} />
+              {hasComp && (
+                <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior period'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22}>
+                  <LabelList dataKey={cmpKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }} />
+                </Bar>
+              )}
+              <Bar dataKey={curKey} name={periodInfo.viewLabel || 'Current period'} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={hasComp ? 22 : 40}>
+                <LabelList dataKey={curKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -298,15 +303,22 @@ export default function Dashboard({ session }) {
     if (ct === 'stacked_bar') {
       var seriesKeys = result.series_keys || Object.keys(data[0] || {}).filter(function(k) { return k !== labelKey })
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
+            <BarChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 28 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-              {seriesKeys.map(function(sk, si) { return <Bar key={sk} dataKey={sk} stackId="a" fill={PA[si % PA.length]} stroke={P[si % P.length]} strokeWidth={0.5} maxBarSize={44} /> })}
+              {seriesKeys.map(function(sk, si) {
+                var isLast = si === seriesKeys.length - 1
+                return (
+                  <Bar key={sk} dataKey={sk} stackId="a" fill={PA[si % PA.length]} stroke={P[si % P.length]} strokeWidth={0.5} maxBarSize={44}>
+                    {isLast && <LabelList dataKey={sk} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }} />}
+                  </Bar>
+                )
+              })}
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -321,10 +333,20 @@ export default function Dashboard({ session }) {
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={data} cx="50%" cy="44%" innerRadius={innerR} outerRadius={82} dataKey={valueKey} nameKey={labelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}>
+              <Pie
+                data={data} cx="50%" cy="44%"
+                innerRadius={innerR} outerRadius={82}
+                dataKey={valueKey} nameKey={labelKey}
+                paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}
+                label={function(entry) {
+                  var pct = (entry.percent * 100).toFixed(1)
+                  return pct + '%'
+                }}
+                labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}
+              >
                 {data.map(function(entry, i) { return <Cell key={i} fill={PA[i % PA.length]} stroke={P[i % P.length]} strokeWidth={0.5} /> })}
               </Pie>
-              <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v), n] }} />
+              <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
               <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} iconSize={6} formatter={function(v) { return v && v.length > 18 ? v.slice(0,16) + '...' : v }} />
             </PieChart>
           </ResponsiveContainer>
@@ -353,7 +375,9 @@ export default function Dashboard({ session }) {
                   </div>
                 )
               }} />
-              <Scatter data={data} fill={color} opacity={0.85} />
+              <Scatter data={data} fill={color} opacity={0.85}>
+                <LabelList dataKey={labelKey} position="top" style={{ fontSize: 8, fill: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }} />
+              </Scatter>
             </ScatterChart>
           </ResponsiveContainer>
         </ChartCard>
