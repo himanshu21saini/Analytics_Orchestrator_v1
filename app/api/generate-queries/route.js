@@ -517,7 +517,7 @@ export async function POST(request) {
     '',
     'Order by priority: KPI cards first (priority 1-8), then charts by insight value.',
     'Generate all KPI cards + all charts you deem insightful. Do not artificially limit.',
-  ]
+  ])
 
   var prompt = promptLines.join('\n')
 
