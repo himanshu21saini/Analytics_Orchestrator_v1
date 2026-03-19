@@ -153,7 +153,8 @@ export async function POST(request) {
       throw new Error('Could not parse JSON: ' + cleaned.slice(0, 200))
     }
 
-    return Response.json({ result: parsed, model: 'gpt-4o-mini' })
+    var usage = json.usage || {}
+    return Response.json({ result: parsed, model: 'gpt-4o-mini', usage: { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o-mini' } })
   } catch (err) {
     console.error('generate-summary error:', err)
     return Response.json({ error: err.message || 'Failed to generate summary.' }, { status: 500 })
