@@ -432,37 +432,44 @@ function buildIntentQueries(intent, datasetId, f, CF) {
     })
 
     // Top-N entity breakdown by drilldown slot.
-    // FIX 1: Remove SELECT DISTINCT — use plain GROUP BY + ORDER BY aggregate.
-    // FIX 2: Safe integer cast on ORDER BY.
+    // Rendered as an interactive drill-down panel (not a flat bar) so the user
+    // clicks a branch to see its interval breakdown — avoids 100-bar overload.
+    // SQL now also selects the sort field separately so Dashboard can sort correctly.
     var heatSQL = [
       'SELECT',
-      "  data->>'"+ddEntity+"' AS label,",
-      "  data->>'"+ddDim+"' AS slot,",
-      "  AVG(COALESCE((data->>'"+ddMetric+"')::numeric, 0)) AS current_value",
+      "  data->>'" + ddEntity + "' AS label,",
+      "  data->>'" + ddLabel  + "' AS slot,",
+      "  data->>'" + ddDim   + "' AS slot_sort,",
+      "  AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value",
       base,
-      "  AND data->>'"+ddEntity+"' IN (",
-      '    SELECT '+    "data->>'"+ddEntity+"'",
+      "  AND data->>'" + ddEntity + "' IN (",
+      '    SELECT '    + "data->>'" + ddEntity + "'",
       '    FROM dataset_rows',
-      '    WHERE dataset_id = '+datasetId+' AND '+f.curCond+CF,
-      "    AND data->>'"+ddEntity+"' IS NOT NULL",
-      "    GROUP BY data->>'"+ddEntity+"'",
-      "    ORDER BY AVG(COALESCE((data->>'"+ddMetric+"')::numeric, 0)) DESC",
-      '    LIMIT '+ddTopN,
+      '    WHERE dataset_id = ' + datasetId + ' AND ' + f.curCond + CF,
+      "    AND data->>'" + ddEntity + "' IS NOT NULL",
+      "    GROUP BY data->>'" + ddEntity + "'",
+      "    ORDER BY AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) DESC",
+      '    LIMIT ' + ddTopN,
       '  )',
-      "GROUP BY data->>'"+ddEntity+"', data->>'"+ddDim+"'",
-      "ORDER BY data->>'"+ddEntity+"', "+safeIntOrder(ddDim),
+      "GROUP BY data->>'" + ddEntity + "', data->>'" + ddLabel + "', data->>'" + ddDim + "'",
+      "ORDER BY data->>'" + ddEntity + "', " + safeIntOrder(ddDim),
     ].join('\n')
 
     queries.push({
-      id:               'intent_heatmap_'+ddEntity+'_'+ddDim,
-      title:            'Top '+ddTopN+' '+eDisp+'s — '+ddMDisp+' by '+ddDisp,
-      chart_type:       'bar',
+      id:               'intent_heatmap_' + ddEntity + '_' + ddDim,
+      title:            'Top ' + ddTopN + ' ' + eDisp + 's — ' + ddMDisp + ' by ' + ddDisp,
+      chart_type:       'drilldown',
       sql:              heatSQL,
       current_key:      'current_value',
       value_key:        'current_value',
-      label_key:        'label',
+      label_key:        'label',     // branch_name
+      slot_key:         'slot',      // interval label (display)
+      slot_sort_key:    'slot_sort', // interval_sort_order (for ordering)
+      entity_display:   eDisp,
+      slot_display:     ddDisp,
+      metric_display:   ddMDisp,
       unit:             '',
-      insight:          'Avg '+ddMDisp+' per '+ddDisp.toLowerCase()+' for the top '+ddTopN+' most stressed '+eDisp.toLowerCase()+'s.',
+      insight:          'Click any branch to see its ' + ddDisp.toLowerCase() + ' stress pattern.',
       priority:         53,
       intent_generated: true,
     })
