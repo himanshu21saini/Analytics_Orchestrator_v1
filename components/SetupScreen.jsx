@@ -86,6 +86,8 @@ export default function SetupScreen({ onReady }) {
   var [error,        setError]        = useState('')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
+  // Panel preferences — all on by default
+  var [prefs, setPrefs] = useState({ decisions: true, summary: true, forecast: true, queryInspector: true, coveragePanel: true })
   // User context — uncontrolled textarea (ref) to avoid re-render on every keystroke
   var contextRef = useRef()
   var [extracting,   setExtracting]   = useState(false)
@@ -210,6 +212,7 @@ export default function SetupScreen({ onReady }) {
         initialUsage: gqJson.usage || null,
         userContext: userContext || null,
         coverageData: gqJson.coverageData || null,
+        preferences: prefs,
       })
     } catch (err) { setError(err.message); setWorking(false); setProgress('') }
   }
@@ -546,6 +549,40 @@ export default function SetupScreen({ onReady }) {
             </div>
           </div>
         )}
+
+        {/* Section 4: Dashboard Panels */}
+        <SectionCard n="4" title="Dashboard panels">
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 14, fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+            Choose which panels appear on your dashboard.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { key: 'decisions',     label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
+              { key: 'summary',       label: 'Generate Summary',    desc: 'Executive narrative report' },
+              { key: 'forecast',      label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
+              { key: 'queryInspector',label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
+              { key: 'coveragePanel', label: 'Coverage Report',     desc: 'Why certain KPIs or charts were skipped' },
+            ].map(function(item) {
+              var on = prefs[item.key] !== false
+              return (
+                <div
+                  key={item.key}
+                  onClick={function() { setPrefs(function(p) { var n = Object.assign({}, p); n[item.key] = !on; return n }) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid ' + (on ? 'var(--accent-border)' : 'var(--border)'), background: on ? 'var(--accent-dim)' : 'transparent', cursor: 'pointer', transition: 'all var(--transition)' }}
+                >
+                  {/* Toggle pill */}
+                  <div style={{ width: 32, height: 18, borderRadius: 9, background: on ? 'var(--accent)' : 'var(--border)', position: 'relative', flexShrink: 0, transition: 'background var(--transition)' }}>
+                    <div style={{ position: 'absolute', top: 2, left: on ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left var(--transition)' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 12, fontWeight: 500, color: on ? 'var(--text-accent)' : 'var(--text-secondary)', fontFamily: 'var(--font-body)', marginBottom: 1 }}>{item.label}</p>
+                    <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{item.desc}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </SectionCard>
 
         {/* Build */}
         <div className="fade-up d4">
