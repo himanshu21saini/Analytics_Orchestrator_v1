@@ -312,6 +312,257 @@ function formatPreAnalysis(preAnalysis) {
   return lines.join('\n')
 }
 
+// ── Intent-specific query builder ─────────────────────────────────────────────
+//
+// Called AFTER standard LLM query generation. Builds 2-4 bonus queries
+// based on the classified intent from extract-context. These are appended
+// to the standard queries array with high priority numbers (50+) so they
+// always appear after KPI cards and standard charts in the dashboard.
+//
+// All intent queries respect context filters (CF) and current period (curCond).
+// They do NOT include comparison_value — intent queries are single-period
+// analytical queries, not period-over-period comparisons.
+//
+// Intent types:
+//   ranking              → top-N entities ranked by metric (bar chart)
+//   ranking_with_drilldown → ranking + interval/time breakdown (bar + line)
+//   distribution         → categorical spread (donut)
+//   temporal             → pattern over time slots (line/area)
+
+function buildIntentQueries(intent, datasetId, f, CF) {
+  if (!intent || !intent.type || intent.type === 'null') return []
+
+  var queries = []
+  var base    = 'FROM dataset_rows WHERE dataset_id = ' + datasetId + ' AND ' + f.curCond + CF
+
+  // ── RANKING ────────────────────────────────────────────────────────────────
+  if (intent.type === 'ranking' || intent.type === 'ranking_with_drilldown') {
+    var entity  = intent.primary_entity  || 'branch_name'
+    var metric  = intent.primary_metric  || 'bfi_2_score'
+    var topN    = parseInt(intent.top_n) || 10
+    var dir     = (intent.direction || 'desc').toUpperCase()
+    var eDisp   = intent.primary_entity_display  || entity
+    var mDisp   = intent.primary_metric_display  || metric
+
+    // Ranking bar chart — top N entities by metric
+    var rankSQL = [
+      'SELECT',
+      "  data->>'" + entity + "' AS label,",
+      "  AVG(COALESCE((data->>'" + metric + "')::numeric, 0)) AS value",
+      base,
+      "  AND data->>'" + entity + "' IS NOT NULL",
+      "  AND data->>'" + entity + "' != ''",
+      "GROUP BY data->>'" + entity + "'",
+      'ORDER BY value ' + dir,
+      'LIMIT ' + topN,
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_ranking_' + entity,
+      title:      mDisp + ' by ' + eDisp + ' — Ranked',
+      chart_type: 'bar',
+      sql:        rankSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       '',
+      insight:    'Ranks every ' + eDisp + ' by average ' + mDisp + '. ' +
+                  (dir === 'DESC' ? 'Highest values appear first.' : 'Lowest values appear first.'),
+      priority:   50,
+      intent_generated: true,
+    })
+
+    // Distribution of stress category across entities (donut)
+    // Only add if a categorical label field exists in the metadata
+    var stressType = 'Stress Type'  // detected from TSI metadata — generalised below
+    var stressSQL = [
+      'SELECT',
+      "  data->>'" + stressType + "' AS label,",
+      '  COUNT(*) AS value',
+      base,
+      "  AND data->>'" + stressType + "' IS NOT NULL",
+      "  AND data->>'" + stressType + "' != ''",
+      "GROUP BY data->>'" + stressType + "'",
+      'ORDER BY value DESC',
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_stress_distribution',
+      title:      'Distribution by ' + stressType,
+      chart_type: 'donut',
+      sql:        stressSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       'count',
+      insight:    'Shows the proportion of intervals falling into each stress category across the selected period.',
+      priority:   51,
+      intent_generated: true,
+    })
+  }
+
+  // ── RANKING WITH DRILLDOWN ────────────────────────────────────────────────
+  if (intent.type === 'ranking_with_drilldown') {
+    var ddDim    = intent.drilldown_dimension  || 'interval_sort_order'
+    var ddLabel  = intent.drilldown_label_field || ddDim
+    var ddDisp   = intent.drilldown_display     || ddDim
+    var ddMetric = intent.primary_metric        || 'bfi_2_score'
+    var ddEntity = intent.primary_entity        || 'branch_name'
+    var ddMDisp  = intent.primary_metric_display || ddMetric
+    var ddTopN   = parseInt(intent.top_n) || 5
+
+    // Intra-day (or sub-dimension) profile — AVG metric by time slot
+    // Filtered to current period only; user sees the overall pattern
+    var drillSQL = [
+      'SELECT',
+      "  data->>'" + ddDim + "' AS sort_key,",
+      "  COALESCE(data->>'" + ddLabel + "', data->>'" + ddDim + "') AS label,",
+      "  AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS value",
+      base,
+      "  AND data->>'" + ddDim + "' IS NOT NULL",
+      "GROUP BY data->>'" + ddDim + "', data->>'" + ddLabel + "'",
+      "ORDER BY (data->>'" + ddDim + "')::integer ASC",
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_drilldown_' + ddDim,
+      title:      ddMDisp + ' across ' + ddDisp + 's',
+      chart_type: 'line',
+      sql:        drillSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       '',
+      insight:    'Shows how ' + ddMDisp + ' varies across each ' + ddDisp.toLowerCase() +
+                  ', averaged across all entities. Peaks indicate the most stressed time slots.',
+      priority:   52,
+      intent_generated: true,
+    })
+
+    // Heatmap-style: top N entities stacked by drilldown dimension
+    // Implemented as stacked_bar — entity on X, metric stacked by drilldown slot
+    // Practical cap: top 5 entities × all drilldown slots
+    var heatSQL = [
+      'SELECT',
+      "  data->>'" + ddEntity + "' AS label,",
+      "  data->>'" + ddDim + "' AS slot,",
+      "  AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS value",
+      base,
+      "  AND data->>'" + ddEntity + "' IN (",
+      '    SELECT DISTINCT ' + "data->>'" + ddEntity + "'",
+      '    FROM dataset_rows',
+      '    WHERE dataset_id = ' + datasetId + ' AND ' + f.curCond + CF,
+      "    AND data->>'" + ddEntity + "' IS NOT NULL",
+      "    GROUP BY data->>'" + ddEntity + "'",
+      "    ORDER BY AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) DESC",
+      '    LIMIT ' + ddTopN,
+      '  )',
+      "GROUP BY data->>'" + ddEntity + "', data->>'" + ddDim + "'",
+      "ORDER BY data->>'" + ddEntity + "', (data->>'" + ddDim + "')::integer ASC",
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_heatmap_' + ddEntity + '_' + ddDim,
+      title:      'Top ' + ddTopN + ' ' + (intent.primary_entity_display || ddEntity) + 's — ' + ddMDisp + ' by ' + ddDisp,
+      chart_type: 'bar',
+      sql:        heatSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       '',
+      insight:    'Compares ' + ddMDisp + ' patterns across time slots for the top ' + ddTopN +
+                  ' most stressed ' + (intent.primary_entity_display || ddEntity).toLowerCase() + 's.',
+      priority:   53,
+      intent_generated: true,
+    })
+  }
+
+  // ── DISTRIBUTION ──────────────────────────────────────────────────────────
+  if (intent.type === 'distribution') {
+    var distDim    = intent.distribution_dimension || 'Stress Type'
+    var distMetric = intent.distribution_metric    || 'bfi_2_score'
+
+    var distSQL = [
+      'SELECT',
+      "  data->>'" + distDim + "' AS label,",
+      '  COUNT(*) AS value',
+      base,
+      "  AND data->>'" + distDim + "' IS NOT NULL",
+      "  AND data->>'" + distDim + "' != ''",
+      "GROUP BY data->>'" + distDim + "'",
+      'ORDER BY value DESC',
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_distribution_' + distDim.replace(/\s+/g, '_'),
+      title:      'Distribution by ' + distDim,
+      chart_type: 'donut',
+      sql:        distSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       'count',
+      insight:    'Shows the spread of records across each ' + distDim + ' category.',
+      priority:   50,
+      intent_generated: true,
+    })
+
+    // Also show the metric value per category as a bar
+    var distBarSQL = [
+      'SELECT',
+      "  data->>'" + distDim + "' AS label,",
+      "  AVG(COALESCE((data->>'" + distMetric + "')::numeric, 0)) AS value",
+      base,
+      "  AND data->>'" + distDim + "' IS NOT NULL",
+      "GROUP BY data->>'" + distDim + "'",
+      'ORDER BY value DESC',
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_distribution_bar_' + distDim.replace(/\s+/g, '_'),
+      title:      'Avg ' + distMetric + ' by ' + distDim,
+      chart_type: 'bar',
+      sql:        distBarSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       '',
+      insight:    'Average ' + distMetric + ' for each ' + distDim + ' category.',
+      priority:   51,
+      intent_generated: true,
+    })
+  }
+
+  // ── TEMPORAL ──────────────────────────────────────────────────────────────
+  if (intent.type === 'temporal') {
+    var timeDim    = intent.time_dimension   || 'interval_sort_order'
+    var timeLabel  = intent.time_label_field || timeDim
+    var timeMet    = intent.temporal_metric  || 'bfi_2_score'
+
+    var temporalSQL = [
+      'SELECT',
+      "  data->>'" + timeDim + "' AS sort_key,",
+      "  COALESCE(data->>'" + timeLabel + "', data->>'" + timeDim + "') AS label,",
+      "  AVG(COALESCE((data->>'" + timeMet + "')::numeric, 0)) AS value,",
+      '  COUNT(*) AS record_count',
+      base,
+      "  AND data->>'" + timeDim + "' IS NOT NULL",
+      "GROUP BY data->>'" + timeDim + "', data->>'" + timeLabel + "'",
+      "ORDER BY (data->>'" + timeDim + "')::integer ASC",
+    ].join('\n')
+
+    queries.push({
+      id:         'intent_temporal_' + timeDim,
+      title:      timeMet + ' Pattern by ' + (timeLabel !== timeDim ? timeLabel : timeDim),
+      chart_type: 'area',
+      sql:        temporalSQL,
+      value_key:  'value',
+      label_key:  'label',
+      unit:       '',
+      insight:    'Shows how ' + timeMet + ' evolves across each ' + timeLabel + '. ' +
+                  'Peaks reveal the highest-stress time slots.',
+      priority:   50,
+      intent_generated: true,
+    })
+  }
+
+  return queries
+}
+
 // ── Main route handler ────────────────────────────────────────────────────────
 export async function POST(request) {
   var apiKey = process.env.OPENAI_API_KEY
@@ -325,7 +576,7 @@ export async function POST(request) {
   var metadataSetId = body.metadataSetId
   var datasetId     = body.datasetId
   var timePeriod    = body.timePeriod || { viewType: 'YTD', year: 2024, month: 12, comparisonType: 'YoY' }
-  var userContext   = body.userContext || null  // { filters: [...], kpi_focus: [...], explanation: '' }
+  var userContext   = body.userContext || null  // { filters, kpi_focus, explanation, intent }
 
   if (!metadataSetId || !datasetId) {
     return Response.json({ error: 'metadataSetId and datasetId are required.' }, { status: 400 })
@@ -461,14 +712,20 @@ export async function POST(request) {
     'Comparison PIT (latest month only): WHERE: ' + f.cmpCondPIT,
     'current year = ' + f.curYear + '  |  comparison year = ' + f.cmpYear,
     '',
-  ].concat(userContext && (userContext.filters.length || userContext.kpi_focus.length) ? [
+  ].concat(userContext && (userContext.filters.length || userContext.kpi_focus.length || userContext.intent) ? [
     '## USER CONTEXT (applied to this dashboard)',
     userContext.explanation || '',
-    userContext.filters.length
-      ? 'Active filters: ' + userContext.filters.map(function(f) { return f.field + ' ' + f.operator + ' ' + f.value }).join(', ')
+    userContext.filters && userContext.filters.length
+      ? 'Active filters: ' + userContext.filters.map(function(fi) { return fi.field + ' ' + fi.operator + ' ' + fi.value }).join(', ')
       : '',
-    userContext.kpi_focus.length
+    userContext.kpi_focus && userContext.kpi_focus.length
       ? 'KPI focus fields: ' + userContext.kpi_focus.join(', ') + ' — PRIORITISE these in chart selection and KPI cards. Allocate at least 60% of chart slots to these KPIs and their breakdowns. Other KPIs may still appear but should receive fewer chart slots.'
+      : '',
+    userContext.intent && userContext.intent.type
+      ? 'User intent: ' + userContext.intent.type + ' — ' + (userContext.intent.summary || '') +
+        '. NOTE: Intent-specific queries (ranking, drilldown, temporal) will be appended automatically. ' +
+        'Focus your standard queries on KPI cards and supporting context charts. ' +
+        'Do NOT generate a separate ranking chart for ' + (userContext.intent.primary_entity || '') + ' — that is handled by intent queries.'
       : '',
     'NOTE: All SQL templates already include the context filter — do NOT add extra WHERE conditions for the filter.',
     '',
@@ -625,6 +882,14 @@ export async function POST(request) {
     if (!Array.isArray(queries)) throw new Error('Expected queries array, got: ' + typeof queries)
 
     queries.sort(function(a, b) { return (a.priority || 99) - (b.priority || 99) })
+
+    // ── Append intent-specific bonus queries ──────────────────────────────
+    var intent = userContext && userContext.intent ? userContext.intent : null
+    if (intent && intent.type && intent.type !== 'null') {
+      var intentQueries = buildIntentQueries(intent, datasetId, f, CF)
+      console.log('=== Intent queries built: ' + intentQueries.length + ' (' + intent.type + ')')
+      queries = queries.concat(intentQueries)
+    }
 
     console.log('=== Queries generated: ' + queries.length)
 
