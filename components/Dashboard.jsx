@@ -287,13 +287,16 @@ export default function Dashboard({ session }) {
     if (ct === 'bar') {
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={data} margin={{ top: 22, right: 8, left: 0, bottom: 48 }} barGap={2}>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 52 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
+              <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+              <Legend
+                verticalAlign="top" align="right"
+                wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }}
+              />
               {hasComp && (
                 <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior period'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22}>
                   <LabelList dataKey={cmpKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }} />
@@ -312,13 +315,16 @@ export default function Dashboard({ session }) {
       var seriesKeys = result.series_keys || Object.keys(data[0] || {}).filter(function(k) { return k !== labelKey })
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data} margin={{ top: 22, right: 8, left: 0, bottom: 28 }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 52 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
+              <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+              <Legend
+                verticalAlign="top" align="right"
+                wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }}
+              />
               {seriesKeys.map(function(sk, si) {
                 var isLast = si === seriesKeys.length - 1
                 return (
