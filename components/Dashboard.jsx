@@ -129,13 +129,21 @@ export default function Dashboard({ session }) {
   // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
   // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
+  var [trendSQLCache,  setTrendSQLCache]  = useState({})
 
-  function handleTrendData(fieldName, data, meta) {
+  function handleTrendData(fieldName, data, meta, sql) {
     setTrendDataCache(function(prev) {
       var next = Object.assign({}, prev)
       next[fieldName] = { data: data, meta: meta }
       return next
     })
+    if (sql) {
+      setTrendSQLCache(function(prev) {
+        var next = Object.assign({}, prev)
+        next[fieldName] = { sql: sql, title: (meta && meta.display_name) || fieldName }
+        return next
+      })
+    }
   }
 
   var queryResults = session.queryResults || []
@@ -556,7 +564,7 @@ export default function Dashboard({ session }) {
       )}
 
       {/* ── Query Inspector ──────────────────────────────────────── */}
-      <QueryInspector queries={allQueries} periodInfo={periodInfo} />
+      <QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} />
 
       {/* ── Decision Intelligence ─────────────────────────────────── */}
       {decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
@@ -575,10 +583,12 @@ export default function Dashboard({ session }) {
   )
 }
 
-function QueryInspector({ queries, periodInfo }) {
+function QueryInspector({ queries, periodInfo, trendSQLs }) {
   var [open, setOpen] = useState(false); var [expandedId, setExpandedId] = useState(null)
-  if (!queries || !queries.length) return null
-  var typeColor = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030' }
+  var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
+  var total = (queries ? queries.length : 0) + trendEntries.length
+  if (!total) return null
+  var typeColor = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030', trend: '#F0A030' }
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16, background: 'var(--surface)', backdropFilter: 'blur(8px)' }}>
@@ -586,7 +596,7 @@ function QueryInspector({ queries, periodInfo }) {
         style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Query Inspector</span>
-          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 2, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', fontFamily: 'var(--font-mono)' }}>{queries.length}</span>
+          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 2, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', fontFamily: 'var(--font-mono)' }}>{total}</span>
         </div>
         <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none', transition: 'var(--transition)' }}>▾</span>
       </button>
@@ -598,7 +608,7 @@ function QueryInspector({ queries, periodInfo }) {
               {periodInfo.viewLabel} · {periodInfo.cmpLabel}
             </div>
           )}
-          {queries.map(function(q, idx) {
+          {(queries || []).map(function(q, idx) {
             var isExpanded = expandedId === q.id; var tc = typeColor[q.chart_type] || '#8BB4D8'
             return (
               <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
@@ -626,6 +636,34 @@ function QueryInspector({ queries, periodInfo }) {
               </div>
             )
           })}
+          {trendEntries.length > 0 && (
+            <>
+              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
+                Trend Explorer queries
+              </div>
+              {trendEntries.map(function(q) {
+                var isExpanded = expandedId === q.id
+                return (
+                  <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#F0A030', border: '1px solid rgba(240,160,48,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>trend</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
+                    </button>
+                    {isExpanded && (
+                      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)' }}>
+                        <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.7, color: 'var(--text-secondary)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                          {(q.sql || '').replace(/\s+(SELECT|FROM|WHERE|AND|GROUP BY|ORDER BY|HAVING|LIMIT|LEFT JOIN)\s+/gi, function(m) { return '\n' + m.trim() + ' ' })}
+                        </pre>
+                        <CopyButton text={q.sql} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
         </div>
       )}
     </div>
