@@ -234,14 +234,17 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
   })
 
   var [selectedField, setSelectedField] = useState(kpiOptions.length ? kpiOptions[0].field_name : '')
-  var [chartMode,     setChartMode]     = useState('comparison') // 'comparison' | 'forecast'
+  var [chartMode,     setChartMode]     = useState('comparison')
   var [cache,         setCache]         = useState({})
   var [dataState,     setDataState]     = useState('idle')
   var [dataError,     setDataError]     = useState('')
   var [prefetchDone,  setPrefetchDone]  = useState(false)
 
+  // Cache key includes yf/mf so fiscal vs report calendar changes force a re-fetch
+  function cacheKey(field) { return field + '|' + yf + '|' + mf }
+
   var selectedMeta = kpiOptions.find(function(m) { return m.field_name === selectedField })
-  var cached       = cache[selectedField]
+  var cached       = cache[cacheKey(selectedField)]
 
   // ── Background pre-fetch all KPIs on mount ────────────────────────────────
   useEffect(function() {
@@ -263,9 +266,9 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           var distField = isCD ? (meta.dependencies || '') : null
           var sql = buildTrendSQL(datasetId, field, agg, yf, mf, distField)
           setCache(function(p) {
-            if (p[field]) return p
+            if (p[cacheKey(field)]) return p
             var n = Object.assign({}, p)
-            n[field] = { data: j.data, forecast: null, sql: sql,
+            n[cacheKey(field)] = { data: j.data, forecast: null, sql: sql,
               fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }
             return n
           })
@@ -298,7 +301,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           var isCD2 = /distinct/i.test((selectedMeta && selectedMeta.calculation_logic) || '')
           var df2   = isCD2 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
           if (onTrendData) onTrendData(selectedField, j.data || [], selectedMeta)
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df2),
+          setCache(function(p) { var n = Object.assign({}, p); n[cacheKey(selectedField)] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df2),
             fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done')
         })
@@ -339,7 +342,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           var fcResult = (fcJson && fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
           setCache(function(p) {
             var n = Object.assign({}, p)
-            n[selectedField] = Object.assign({}, p[selectedField], { forecast: fcResult })
+            n[cacheKey(selectedField)] = Object.assign({}, p[cacheKey(selectedField)], { forecast: fcResult })
             return n
           })
           setDataState('done')
@@ -363,7 +366,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         var df3   = isCD3 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
         if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
         if (trendData.length < 3) {
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
+          setCache(function(p) { var n = Object.assign({}, p); n[cacheKey(selectedField)] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
             fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done'); return
         }
@@ -387,7 +390,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
             var fcResult = (fcJson && fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
+            setCache(function(p) { var n = Object.assign({}, p); n[cacheKey(selectedField)] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
               fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
             setDataState('done')
           })
