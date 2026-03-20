@@ -151,6 +151,7 @@ export default function Dashboard({ session }) {
   var metadata     = session.metadata     || []
   var periodInfo   = session.periodInfo   || {}
   var allQueries   = session.queries      || []
+  var prefs        = session.preferences  || {}
 
   var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
   var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
@@ -466,6 +467,7 @@ export default function Dashboard({ session }) {
             </div>
 
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              {prefs.decisions !== false && (
               <button
                 onClick={handleGenerateDecisions}
                 disabled={decisionState === 'loading'}
@@ -486,7 +488,9 @@ export default function Dashboard({ session }) {
                   : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>
                 }
               </button>
+              )}
 
+              {prefs.summary !== false && (
               <button
                 onClick={handleGenerateSummary}
                 disabled={summaryState === 'loading'}
@@ -504,9 +508,10 @@ export default function Dashboard({ session }) {
               >
                 {summaryState === 'loading'
                   ? <><span className="spinner" /> Composing...</>
-                  : <>{summaryState === 'done' ? 'Regenerate Report' : 'Generate Report'}</>
+                  : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>
                 }
               </button>
+              )}
             </div>
           </div>
 
@@ -517,6 +522,16 @@ export default function Dashboard({ session }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Decision Intelligence — shown immediately when generated ── */}
+      {prefs.decisions !== false && decisionState !== 'idle' && (
+        <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />
+      )}
+
+      {/* ── Summary — shown immediately when generated ─────────────── */}
+      {prefs.summary !== false && summaryState !== 'idle' && (
+        <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />
       )}
 
       {/* Teal divider */}
@@ -542,8 +557,8 @@ export default function Dashboard({ session }) {
         <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />
       )}
 
-      {/* ── Trend Explorer (full width, single interactive chart) ─── */}
-      {(metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
+      {/* ── Trend Explorer ───────────────────────────────────────────── */}
+      {prefs.forecast !== false && (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
         <TrendExplorer
           metadata={metadata}
           datasetId={session.datasetId}
@@ -553,14 +568,14 @@ export default function Dashboard({ session }) {
         />
       )}
 
-      {/* ── Charts ────────────────────────────────────────────────── */}
+      {/* ── Charts ────────────────────────────────────────────────────── */}
       {chartResults.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           {chartResults.map(function(result, idx) { return renderChart(result, idx) })}
         </div>
       )}
 
-      {/* ── Failed ───────────────────────────────────────────────── */}
+      {/* ── Failed ────────────────────────────────────────────────────── */}
       {failed.length > 0 && (
         <div style={{ background: 'var(--amber-light)', border: '1px solid rgba(240,160,48,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--amber-text)', marginBottom: 4, fontFamily: 'var(--font-body)' }}>
@@ -570,17 +585,17 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ── Query Inspector ──────────────────────────────────────── */}
-      <QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} />
-      <CoveragePanel coverageData={session.coverageData} />
+      {/* ── Query Inspector ───────────────────────────────────────────── */}
+      {prefs.queryInspector !== false && (
+        <QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} />
+      )}
 
-      {/* ── Decision Intelligence ─────────────────────────────────── */}
-      {decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
+      {/* ── Coverage Panel ────────────────────────────────────────────── */}
+      {prefs.coveragePanel !== false && (
+        <CoveragePanel coverageData={session.coverageData} />
+      )}
 
-      {/* ── Summary ──────────────────────────────────────────────── */}
-      {summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
-
-      {/* ── What-if Drawer ───────────────────────────────────────── */}
+      {/* ── What-if Drawer ────────────────────────────────────────────── */}
       <WhatIfDrawer
         query={whatifQuery || {}}
         metadata={metadata}
