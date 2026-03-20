@@ -530,6 +530,40 @@ export function SetupScreenDev({ onReady }) {
               </div>
             )}
 
+            {/* ── Intent chip (NEW) ──────────────────────────── */}
+            {extracted.intent && extracted.intent.type && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Analytical intent</p>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                  {/* Intent type badge */}
+                  <span style={{
+                    fontSize: 10, padding: '3px 10px', borderRadius: 12,
+                    background: 'rgba(155,127,227,0.12)',
+                    border: '1px solid rgba(155,127,227,0.35)',
+                    color: '#B8A0F0',
+                    fontFamily: 'var(--font-mono)',
+                    letterSpacing: '0.06em',
+                    flexShrink: 0,
+                  }}>
+                    {extracted.intent.type.replace(/_/g, ' ')}
+                  </span>
+                  {/* Intent summary */}
+                  {extracted.intent.summary && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                      {extracted.intent.summary}
+                    </span>
+                  )}
+                </div>
+                {/* Show what will be generated */}
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                  {extracted.intent.type === 'ranking' && 'Will add: ranking chart · stress distribution'}
+                  {extracted.intent.type === 'ranking_with_drilldown' && 'Will add: ranking chart · stress distribution · intra-day pattern · per-entity breakdown'}
+                  {extracted.intent.type === 'distribution' && 'Will add: category distribution · metric by category'}
+                  {extracted.intent.type === 'temporal' && 'Will add: temporal pattern chart'}
+                </p>
+              </div>
+            )}
+
             {extracted.explanation && (
               <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
                 {extracted.explanation}
@@ -1038,6 +1072,20 @@ export function SetupScreenProd({ onReady }) {
                   </div>
                 )}
                 {extracted.explanation && <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{extracted.explanation}</p>}
+                {/* Intent chip */}
+                {extracted.intent && extracted.intent.type && (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                    <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>Intent</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(155,127,227,0.12)', border: '1px solid rgba(155,127,227,0.3)', color: '#B8A0F0', fontFamily: 'var(--font-mono)' }}>
+                        {extracted.intent.type.replace(/_/g, ' ')}
+                      </span>
+                      {extracted.intent.summary && (
+                        <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{extracted.intent.summary}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </ProdSectionCard>
