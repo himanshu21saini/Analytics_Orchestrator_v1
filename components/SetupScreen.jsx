@@ -1000,6 +1000,7 @@ export function SetupScreenProd({ onReady }) {
           {/* Section 3: Context */}
           <ProdSectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.</p>
+            <textarea
               ref={contextRef}
               defaultValue=""
               placeholder={'e.g. "I am head of West Region and my focus is Revenue"'}
