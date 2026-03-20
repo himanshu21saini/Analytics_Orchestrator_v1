@@ -75,14 +75,17 @@ function ModeButton({ label, active, onClick }) {
   )
 }
 
-function buildTrendSQL(datasetId, fieldName, agg, yf, mf) {
+function buildTrendSQL(datasetId, fieldName, agg, yf, mf, distField) {
   yf = yf || 'year'; mf = mf || 'month'
   var curYear = new Date().getFullYear()
   var minYear = curYear - 3
+  var valueExpr = distField
+    ? "COUNT(DISTINCT data->>'" + distField + "')"
+    : agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0))"
   return [
     'SELECT',
     "  CONCAT(data->>'" + yf + "', '-', LPAD(CAST((data->>'" + mf + "')::integer AS TEXT), 2, '0')) AS period,",
-    '  ' + agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0)) AS value",
+    '  ' + valueExpr + ' AS value',
     'FROM dataset_rows',
     'WHERE dataset_id = ' + datasetId,
     "  AND (data->>'" + yf + "')::integer >= " + minYear,
@@ -256,14 +259,17 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         .then(function(j) {
           if (j.error || !j.data) return
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
+          var isCD = /distinct/i.test(meta.calculation_logic || '')
+          var distField = isCD ? (meta.dependencies || '') : null
+          var sql = buildTrendSQL(datasetId, field, agg, yf, mf, distField)
           setCache(function(p) {
             if (p[field]) return p
             var n = Object.assign({}, p)
-            n[field] = { data: j.data, forecast: null, sql: buildTrendSQL(datasetId, field, agg, yf, mf),
+            n[field] = { data: j.data, forecast: null, sql: sql,
               fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }
             return n
           })
-          onTrendData(field, j.data, meta)
+          onTrendData(field, j.data, meta, sql)
         })
         .catch(function() {})
     })
@@ -289,8 +295,10 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         .then(function(j) {
           if (j.error) throw new Error(j.error)
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
+          var isCD2 = /distinct/i.test((selectedMeta && selectedMeta.calculation_logic) || '')
+          var df2   = isCD2 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
           if (onTrendData) onTrendData(selectedField, j.data || [], selectedMeta)
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df2),
             fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done')
         })
@@ -351,9 +359,11 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         if (j.error) throw new Error(j.error)
         var trendData = j.data || []
         var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
+        var isCD3 = /distinct/i.test((selectedMeta && selectedMeta.calculation_logic) || '')
+        var df3   = isCD3 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
         if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
         if (trendData.length < 3) {
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
             fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
           setDataState('done'); return
         }
@@ -377,7 +387,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
             var fcResult = (fcJson && fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf),
+            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df3),
               fiscal: j.fiscal, fiscalStartMonth: j.fiscalStartMonth }; return n })
             setDataState('done')
           })
