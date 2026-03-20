@@ -108,10 +108,14 @@ function buildPeriodFilters(datasetId, tp) {
     return y + ' AND ' + m
   }
 
-  var curCond = cond(curYear, curMonthMin, curMonthMax)
-  var cmpCond = cond(cmpYear, cmpMonthMin, cmpMonthMax)
+  var curCond    = cond(curYear, curMonthMin, curMonthMax)
+  var cmpCond    = cond(cmpYear, cmpMonthMin, cmpMonthMax)
+  // Point-in-time conditions — always single latest month only
+  // For YTD/QTD these differ from curCond/cmpCond; for MTD they are identical
+  var curCondPIT = cond(curYear, curMonthMax, curMonthMax)
+  var cmpCondPIT = cond(cmpYear, cmpMonthMax, cmpMonthMax)
 
-  return { curCond, cmpCond, curYear, cmpYear, viewLabel, cmpLabel, yf, mf, fiscal }
+  return { curCond, cmpCond, curCondPIT, cmpCondPIT, curYear, cmpYear, viewLabel, cmpLabel, yf, mf, fiscal }
 }
 
 // ── PRE-ANALYSIS: compute real variance for every KPI × dimension pair ────────
@@ -132,7 +136,7 @@ function buildPeriodFilters(datasetId, tp) {
 // We also compute YoY delta per segment so the LLM knows which segments
 // are diverging (a segment moving away from peers is the most exec-relevant signal).
 
-async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond) {
+async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond, curCondPIT, cmpCondPIT) {
   var results = []
 
   // Cap: analyse top 5 KPIs × top 6 dimensions = max 30 queries
@@ -145,7 +149,11 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond) {
     // Detect COUNT DISTINCT KPIs from calculation_logic or aggregation field
     var isCountDistinct = /distinct/i.test(kpi.calculation_logic || '') || /count_distinct/i.test(kpi.aggregation || '')
     var distField = isCountDistinct ? (kpi.dependencies || kpi.field_name) : null
-    var agg = isCountDistinct ? null : (kpi.accumulation_type === 'point_in_time') ? 'AVG' : 'SUM'
+    var isPIT     = !isCountDistinct && kpi.accumulation_type === 'point_in_time'
+    var agg       = isCountDistinct ? null : (isPIT ? 'AVG' : 'SUM')
+    // Use PIT conditions for point_in_time KPIs
+    var useCurCond = (isPIT && curCondPIT) ? curCondPIT : curCond
+    var useCmpCond = (isPIT && cmpCondPIT) ? cmpCondPIT : cmpCond
 
     for (var di = 0; di < dimSample.length; di++) {
       var dim = dimSample[di]
@@ -156,8 +164,8 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond) {
           sql = [
             'SELECT',
             "  data->>'" + dim.field_name + "' AS segment,",
-            "  COUNT(DISTINCT CASE WHEN " + curCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cur_val,",
-            "  COUNT(DISTINCT CASE WHEN " + cmpCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cmp_val",
+            "  COUNT(DISTINCT CASE WHEN " + useCurCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cur_val,",
+            "  COUNT(DISTINCT CASE WHEN " + useCmpCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cmp_val",
             'FROM dataset_rows',
             'WHERE dataset_id = ' + datasetId,
             "  AND data->>'" + dim.field_name + "' IS NOT NULL",
@@ -170,8 +178,8 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond) {
           sql = [
             'SELECT',
             "  data->>'" + dim.field_name + "' AS segment,",
-            '  ' + agg + "(CASE WHEN " + curCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cur_val,",
-            '  ' + agg + "(CASE WHEN " + cmpCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cmp_val",
+            '  ' + agg + "(CASE WHEN " + useCurCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cur_val,",
+            '  ' + agg + "(CASE WHEN " + useCmpCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cmp_val",
             'FROM dataset_rows',
             'WHERE dataset_id = ' + datasetId,
             "  AND data->>'" + dim.field_name + "' IS NOT NULL",
@@ -375,10 +383,12 @@ export async function POST(request) {
 
   // ── RUN PRE-ANALYSIS before calling LLM ──────────────────────────────────
   // Context filter is applied here too so CV scores reflect the filtered population
-  var contextCurCond = f.curCond + (contextFilterSQL ? ' ' + contextFilterSQL : '')
-  var contextCmpCond = f.cmpCond + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  var contextCurCond    = f.curCond    + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  var contextCmpCond    = f.cmpCond    + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  var contextCurCondPIT = f.curCondPIT + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  var contextCmpCondPIT = f.cmpCondPIT + (contextFilterSQL ? ' ' + contextFilterSQL : '')
   console.log('=== pre-analysis: running', topKpis.length, 'KPIs ×', dims.length, 'dims')
-  var preAnalysis = await runPreAnalysis(datasetId, topKpis, dims, contextCurCond, contextCmpCond)
+  var preAnalysis = await runPreAnalysis(datasetId, topKpis, dims, contextCurCond, contextCmpCond, contextCurCondPIT, contextCmpCondPIT)
   var preAnalysisText = formatPreAnalysis(preAnalysis)
   console.log('=== pre-analysis: done,', preAnalysis.length, 'combinations scored')
 
@@ -402,16 +412,20 @@ export async function POST(request) {
 
   var CF = contextFilterSQL ? ' ' + contextFilterSQL : ''  // context filter fragment
 
-  // COUNT DISTINCT template — used for derived KPIs like # Accounts, # Clients
-  // __DIST_FIELD__ = the field to count distinct (from dependencies column)
-  var tplCountDistinct = "SELECT COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
-
-  var tplCountDistinctBar = "SELECT data->>'__DIM__' AS label, COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
-
-  // SQL templates — use resolved year/month field names (f.yf, f.mf) + context filter
+  // Standard cumulative template — sums across the full period range (YTD, QTD, MTD)
   var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
 
-  var tplAvg = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
+  // Point-in-time template — uses latest single month only, not the full range
+  // Use this for balance sheet / stock metrics (Loans, Deposits, AUM, etc.)
+  var tplPIT  = "SELECT AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCondPIT + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
+
+  // Legacy AVG template (kept for backward compat — prefer T-PIT for point_in_time)
+  var tplAvg  = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
+
+  // Count distinct templates — for # Accounts, # Clients, # Households, # Bankers
+  // Uses PIT conditions so count reflects snapshot at as-of month, not cumulative unique count
+  var tplCountDistinct    = "SELECT COUNT(DISTINCT CASE WHEN " + f.curCondPIT + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCondPIT + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
+  var tplCountDistinctBar = "SELECT data->>'__DIM__' AS label, COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
   var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
@@ -423,7 +437,7 @@ export async function POST(request) {
 
   var tplArea = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
 
-  var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULE: current_value uses ' + f.yf + '=' + f.curYear + ' and comparison_value uses ' + f.yf + '=' + f.cmpYear + '. These are DIFFERENT years. Use CASE WHEN to split them. Never use IN. Never repeat the same condition in both columns. The year field is "' + f.yf + '" and the month field is "' + f.mf + '" — always use these exact field names in SQL conditions.'
+  var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULES: (1) current_value uses ' + f.yf + '=' + f.curYear + ' and comparison_value uses ' + f.yf + '=' + f.cmpYear + ' — DIFFERENT years. (2) For point_in_time KPIs use T-PIT not T-SUM — never sum balance sheet items across months. (3) Use CASE WHEN to split periods. Never use IN. The year field is "' + f.yf + '" and month field is "' + f.mf + '" — always use these exact names.'
 
   var promptLines = [
     '## ROLE',
@@ -441,8 +455,10 @@ export async function POST(request) {
     '',
     '## TIME PERIOD',
     'Year field: "' + f.yf + '" | Month field: "' + f.mf + '" — use ONLY these field names in WHERE conditions.',
-    'Current  : ' + f.viewLabel + '  |  WHERE: ' + f.curCond,
-    'Comparison: ' + f.cmpLabel + '  |  WHERE: ' + f.cmpCond,
+    'Current period  : ' + f.viewLabel + '  |  WHERE: ' + f.curCond,
+    'Comparison period: ' + f.cmpLabel + '  |  WHERE: ' + f.cmpCond,
+    'Current PIT (latest month only): WHERE: ' + f.curCondPIT,
+    'Comparison PIT (latest month only): WHERE: ' + f.cmpCondPIT,
     'current year = ' + f.curYear + '  |  comparison year = ' + f.cmpYear,
     '',
   ].concat(userContext && (userContext.filters.length || userContext.kpi_focus.length) ? [
@@ -458,24 +474,24 @@ export async function POST(request) {
     '',
   ] : []).concat([
     '## SQL TEMPLATES (replace __FIELD__, __KPI__, __DIM__, __AGG__, __DIST_FIELD__ with actual values)',
-    'T-SUM (KPI card, cumulative): ' + tplSum,
-    'T-AVG (KPI card, point_in_time): ' + tplAvg,
-    'T-COUNT-DISTINCT (KPI card, count distinct): ' + tplCountDistinct,
-    'T-BAR (grouped bar): ' + tplBar,
+    'T-SUM (KPI card, cumulative — sums across full period): ' + tplSum,
+    'T-PIT (KPI card, point_in_time — single latest month only): ' + tplPIT,
+    'T-AVG (KPI card, legacy average — avoid, use T-PIT instead): ' + tplAvg,
+    'T-COUNT-DISTINCT (KPI card, count distinct at latest month): ' + tplCountDistinct,
     'T-COUNT-DISTINCT-BAR (bar with count distinct): ' + tplCountDistinctBar,
+    'T-BAR (grouped bar): ' + tplBar,
     'T-LINE (trend line): ' + tplLine,
     'T-PIE (pie/donut): ' + tplPie,
     'T-SCATTER (scatter): ' + tplScatter,
     'T-AREA (area chart): ' + tplArea,
     '',
-    '## COUNT DISTINCT RULES',
-    'Some derived KPIs use COUNT DISTINCT — identified by calculation_logic containing "Distinct" or aggregation = "COUNT_DISTINCT".',
-    'For these KPIs:',
-    '  - Use T-COUNT-DISTINCT for KPI cards (replace __DIST_FIELD__ with the field in dependencies)',
-    '  - Use T-COUNT-DISTINCT-BAR for bar chart breakdowns',
-    '  - Example: # Accounts (dependencies: Account) → __DIST_FIELD__ = Account',
-    '  - Example: # Clients (dependencies: Client) → __DIST_FIELD__ = Client',
-    '  - NEVER use T-SUM or T-AVG for count distinct KPIs — it will give wrong results',
+    '## ACCUMULATION TYPE — CRITICAL',
+    'Each KPI has an accumulation_type. This determines which KPI card template to use:',
+    '  cumulative    → T-SUM  (Revenue, Fees, new customers — things that ADD UP over a period)',
+    '  point_in_time → T-PIT  (Loans Balance, Deposits Balance, AUM — snapshot at latest month)',
+    'WRONG: Using T-SUM for Loans Balance in YTD Jan–Mar would sum Jan+Feb+Mar balances = 3x inflated.',
+    'RIGHT: T-PIT returns the Mar balance only vs Mar prior year.',
+    'Rule: check accumulation_type for EVERY KPI field — use T-SUM for cumulative, T-PIT for point_in_time.',
     '',
     '## FIELD CATALOGUE',
     'KPI fields: ' + JSON.stringify(fieldList(topKpis)),
@@ -499,8 +515,11 @@ export async function POST(request) {
     'STEP 1 — KPI Cards (max 8 total, 4 per row × 2 rows):',
     '  - Generate one kpi card for EACH of the top-priority KPI and derived_kpi fields',
     '  - Cap at 8 total KPI cards — prioritise by business_priority (High first)',
-    '  - Use T-SUM for cumulative fields, T-AVG for point_in_time fields',
-    '  - Use T-COUNT-DISTINCT for any field whose calculation_logic contains "Distinct" — replace __DIST_FIELD__ with the field name from the dependencies column',
+    '  - Use T-SUM for cumulative fields',
+    '  - Use T-PIT for point_in_time fields (balance sheet / stock items) — NOT T-SUM',
+    '  - Use T-COUNT-DISTINCT for any field whose calculation_logic contains "Distinct" or aggregation = "COUNT_DISTINCT"',
+    '    Replace __DIST_FIELD__ with the raw field name from the dependencies column',
+    '    Example: # Accounts (dependencies: Account) → __DIST_FIELD__ = Account',
     '',
     'STEP 2 — Charts (generate 8-12 charts):',
     '  DIMENSION SELECTION RULES (enforce strictly):',
