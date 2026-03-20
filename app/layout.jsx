@@ -1,8 +1,9 @@
 import './globals.css'
+import { APP_NAME, APP_TAGLINE } from '../lib/app-config'
 
 export const metadata = {
-  title: 'Intelligence | Private Banking',
-  description: 'AI-powered banking intelligence dashboard.',
+  title: APP_NAME + ' | ' + APP_TAGLINE,
+  description: 'AI-powered intelligence dashboard — analyse any dataset with AI-generated insights, decisions, and forecasts.',
 }
 
 export default function RootLayout({ children }) {
