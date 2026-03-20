@@ -142,25 +142,45 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond) {
 
   for (var ki = 0; ki < kpiSample.length; ki++) {
     var kpi = kpiSample[ki]
-    var agg = (kpi.accumulation_type === 'point_in_time') ? 'AVG' : 'SUM'
+    // Detect COUNT DISTINCT KPIs from calculation_logic or aggregation field
+    var isCountDistinct = /distinct/i.test(kpi.calculation_logic || '') || /count_distinct/i.test(kpi.aggregation || '')
+    var distField = isCountDistinct ? (kpi.dependencies || kpi.field_name) : null
+    var agg = isCountDistinct ? null : (kpi.accumulation_type === 'point_in_time') ? 'AVG' : 'SUM'
 
     for (var di = 0; di < dimSample.length; di++) {
       var dim = dimSample[di]
 
       try {
-        var sql = [
-          'SELECT',
-          "  data->>'" + dim.field_name + "' AS segment,",
-          '  ' + agg + "(CASE WHEN " + curCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cur_val,",
-          '  ' + agg + "(CASE WHEN " + cmpCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cmp_val",
-          'FROM dataset_rows',
-          'WHERE dataset_id = ' + datasetId,
-          "  AND data->>'" + dim.field_name + "' IS NOT NULL",
-          "  AND data->>'" + dim.field_name + "' != ''",
-          "GROUP BY data->>'" + dim.field_name + "'",
-          'ORDER BY cur_val DESC NULLS LAST',
-          'LIMIT 20',
-        ].join('\n')
+        var sql
+        if (isCountDistinct && distField) {
+          sql = [
+            'SELECT',
+            "  data->>'" + dim.field_name + "' AS segment,",
+            "  COUNT(DISTINCT CASE WHEN " + curCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cur_val,",
+            "  COUNT(DISTINCT CASE WHEN " + cmpCond + " THEN data->>'" + distField + "' ELSE NULL END) AS cmp_val",
+            'FROM dataset_rows',
+            'WHERE dataset_id = ' + datasetId,
+            "  AND data->>'" + dim.field_name + "' IS NOT NULL",
+            "  AND data->>'" + dim.field_name + "' != ''",
+            "GROUP BY data->>'" + dim.field_name + "'",
+            'ORDER BY cur_val DESC NULLS LAST',
+            'LIMIT 20',
+          ].join('\n')
+        } else {
+          sql = [
+            'SELECT',
+            "  data->>'" + dim.field_name + "' AS segment,",
+            '  ' + agg + "(CASE WHEN " + curCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cur_val,",
+            '  ' + agg + "(CASE WHEN " + cmpCond + " THEN COALESCE((data->>'" + kpi.field_name + "')::numeric, 0) ELSE NULL END) AS cmp_val",
+            'FROM dataset_rows',
+            'WHERE dataset_id = ' + datasetId,
+            "  AND data->>'" + dim.field_name + "' IS NOT NULL",
+            "  AND data->>'" + dim.field_name + "' != ''",
+            "GROUP BY data->>'" + dim.field_name + "'",
+            'ORDER BY cur_val DESC NULLS LAST',
+            'LIMIT 20',
+          ].join('\n')
+        }
 
         var rows = await query(sql)
 
@@ -382,6 +402,12 @@ export async function POST(request) {
 
   var CF = contextFilterSQL ? ' ' + contextFilterSQL : ''  // context filter fragment
 
+  // COUNT DISTINCT template — used for derived KPIs like # Accounts, # Clients
+  // __DIST_FIELD__ = the field to count distinct (from dependencies column)
+  var tplCountDistinct = "SELECT COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
+
+  var tplCountDistinctBar = "SELECT data->>'__DIM__' AS label, COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
+
   // SQL templates — use resolved year/month field names (f.yf, f.mf) + context filter
   var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
 
@@ -431,14 +457,25 @@ export async function POST(request) {
     'NOTE: All SQL templates already include the context filter — do NOT add extra WHERE conditions for the filter.',
     '',
   ] : []).concat([
-    '## SQL TEMPLATES (replace __FIELD__, __KPI__, __DIM__, __AGG__ with actual values)',
+    '## SQL TEMPLATES (replace __FIELD__, __KPI__, __DIM__, __AGG__, __DIST_FIELD__ with actual values)',
     'T-SUM (KPI card, cumulative): ' + tplSum,
     'T-AVG (KPI card, point_in_time): ' + tplAvg,
+    'T-COUNT-DISTINCT (KPI card, count distinct): ' + tplCountDistinct,
     'T-BAR (grouped bar): ' + tplBar,
+    'T-COUNT-DISTINCT-BAR (bar with count distinct): ' + tplCountDistinctBar,
     'T-LINE (trend line): ' + tplLine,
     'T-PIE (pie/donut): ' + tplPie,
     'T-SCATTER (scatter): ' + tplScatter,
     'T-AREA (area chart): ' + tplArea,
+    '',
+    '## COUNT DISTINCT RULES',
+    'Some derived KPIs use COUNT DISTINCT — identified by calculation_logic containing "Distinct" or aggregation = "COUNT_DISTINCT".',
+    'For these KPIs:',
+    '  - Use T-COUNT-DISTINCT for KPI cards (replace __DIST_FIELD__ with the field in dependencies)',
+    '  - Use T-COUNT-DISTINCT-BAR for bar chart breakdowns',
+    '  - Example: # Accounts (dependencies: Account) → __DIST_FIELD__ = Account',
+    '  - Example: # Clients (dependencies: Client) → __DIST_FIELD__ = Client',
+    '  - NEVER use T-SUM or T-AVG for count distinct KPIs — it will give wrong results',
     '',
     '## FIELD CATALOGUE',
     'KPI fields: ' + JSON.stringify(fieldList(topKpis)),
@@ -463,6 +500,7 @@ export async function POST(request) {
     '  - Generate one kpi card for EACH of the top-priority KPI and derived_kpi fields',
     '  - Cap at 8 total KPI cards — prioritise by business_priority (High first)',
     '  - Use T-SUM for cumulative fields, T-AVG for point_in_time fields',
+    '  - Use T-COUNT-DISTINCT for any field whose calculation_logic contains "Distinct" — replace __DIST_FIELD__ with the field name from the dependencies column',
     '',
     'STEP 2 — Charts (generate 8-12 charts):',
     '  DIMENSION SELECTION RULES (enforce strictly):',
