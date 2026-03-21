@@ -195,3 +195,73 @@ option { background: var(--surface-2); color: var(--text-primary); }
   opacity: 0.25;
   border: none;
 }
+
+/* â”€â”€ Print / PDF styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Triggered by window.print() from the Export PDF button.
+   The browser's print engine resolves CSS vars, renders SVGs and backdrop-filter
+   correctly â€” unlike html2canvas which re-implements the renderer and gets them wrong.
+*/
+@media print {
+  /* Force dark background throughout */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust:         exact !important;
+    color-adjust:               exact !important;
+  }
+
+  /* Hide everything except the dashboard content */
+  body > main > header,
+  [data-print="hide"],
+  .prism-print-hide {
+    display: none !important;
+  }
+
+  /* Remove sticky/fixed positioning so nothing overlaps */
+  header, nav {
+    position: static !important;
+  }
+
+  /* Remove page margin â€” jsPDF-style content goes edge to edge */
+  @page {
+    margin: 10mm 12mm;
+    size: A4 portrait;
+  }
+
+  /* Ensure the dashboard wrapper fills the page */
+  body, html {
+    background: var(--bg) !important;
+    width: 100% !important;
+  }
+
+  /* Avoid breaking charts across pages */
+  .recharts-wrapper,
+  .recharts-responsive-container {
+    page-break-inside: avoid;
+    break-inside:      avoid;
+  }
+
+  /* Avoid breaking KPI cards across pages */
+  [class*="fade-up"],
+  [class*="fade-in"] {
+    page-break-inside: avoid;
+    break-inside:      avoid;
+  }
+
+  /* Avoid breaking chart cards */
+  .prism-chart-card {
+    page-break-inside: avoid;
+    break-inside:      avoid;
+  }
+
+  /* Reset animations â€” print engines don't run keyframes */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Remove box shadows that can look odd on paper */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}
