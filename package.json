@@ -16,6 +16,7 @@
     "html2canvas": "^1.4.1",
     "@neondatabase/serverless": "^0.10.4",
     "postgres": "^3.4.4"
+    "@vapi-ai/web": "^2.0.0"
   },
   "devDependencies": {
     "autoprefixer": "^10.0.1",
