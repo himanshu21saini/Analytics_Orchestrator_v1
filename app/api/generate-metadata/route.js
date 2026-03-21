@@ -150,7 +150,7 @@ export async function POST(request) {
       messages: [
         {
           role:    'system',
-          content: 'You are a senior BI analyst. Return only a valid JSON object with a single key "fields" containing an array of metadata objects. No markdown.',
+          content: 'You are a senior BI analyst. You MUST return a JSON object with exactly one key called "fields". The value must be an array of metadata objects, one per field. Example: { "fields": [ { "field_name": "revenue", "type": "kpi", ... } ] }. No markdown. No explanation. Only the JSON object.',
         },
         { role: 'user', content: prompt },
       ],
@@ -197,8 +197,6 @@ export async function POST(request) {
     return Response.json({ error: 'LLM returned no fields. Check Vercel logs.' }, { status: 500 })
   }
 
-  var fields = parsed.fields || parsed
-  if (!Array.isArray(fields)) return Response.json({ error: 'LLM returned unexpected format.' }, { status: 500 })
 
   // ── 5. Build Excel ────────────────────────────────────────────────────────
   var wb = XLSX.utils.book_new()
