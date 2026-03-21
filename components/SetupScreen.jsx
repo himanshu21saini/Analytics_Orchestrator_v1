@@ -661,6 +661,9 @@ export function SetupScreenDev({ onReady }) {
               {error}
             </p>
           )}
+
+          {/* Help widget */}
+          <VapiHelpWidget />
         </div>
       </div>
     </div>
@@ -1147,6 +1150,9 @@ export function SetupScreenProd({ onReady }) {
             : showConfirm ? 'Build with this context'
             : 'Generate Intelligence'}
           </button>
+
+          {/* Help widget */}
+          <VapiHelpWidget />
         </div>
 
       </div>
@@ -1158,4 +1164,219 @@ export function SetupScreenProd({ onReady }) {
 export default function SetupScreen({ onReady }) {
   if (SETUP_MODE === 'dev') return <SetupScreenDev onReady={onReady} />
   return <SetupScreenProd onReady={onReady} />
+}
+
+// ── VapiHelpWidget ────────────────────────────────────────────────────────────
+// Shown below the Generate button on the setup screen.
+// Displays a subtle "need help?" prompt that expands into a call-to-action
+// with the VAPI phone number. Replace VAPI_PHONE_NUMBER with your actual number.
+
+var VAPI_PHONE_NUMBER = '+1 (XXX) XXX-XXXX'   // ← replace with your VAPI number
+var VAPI_PHONE_HREF   = 'tel:+1XXXXXXXXXX'     // ← replace with dialable version
+
+function VapiHelpWidget() {
+  var [expanded, setExpanded] = useState(false)
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {!expanded ? (
+        // Collapsed state — subtle text prompt
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+          <button
+            onClick={function() { setExpanded(true) }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px',
+            }}
+          >
+            {/* Mic icon — small */}
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+              <rect x="4" y="0.5" width="4" height="6.5" rx="2"
+                fill="none" stroke="var(--text-tertiary)" strokeWidth="1.2"/>
+              <path d="M2 6a4 4 0 0 0 8 0" stroke="var(--text-tertiary)"
+                strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+              <line x1="6" y1="10" x2="6" y2="11.5" stroke="var(--text-tertiary)"
+                strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span style={{
+              fontSize: 11, color: 'var(--text-tertiary)',
+              fontFamily: 'var(--font-body)',
+              transition: 'color var(--transition)',
+            }}
+              onMouseEnter={function(e) { e.currentTarget.style.color = 'var(--text-secondary)' }}
+              onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+            >
+              Not sure where to start?
+            </span>
+          </button>
+          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+        </div>
+
+      ) : (
+        // Expanded state — call card
+        <div className="fade-in" style={{
+          background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '18px 20px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {/* Top accent */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+            background: 'linear-gradient(90deg, transparent, var(--accent), transparent)',
+            opacity: 0.2,
+          }} />
+
+          {/* Corner brackets */}
+          <div style={{ position: 'absolute', top: 8, left: 8, width: 10, height: 10,
+            borderTop: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)',
+            opacity: 0.5 }} />
+          <div style={{ position: 'absolute', top: 8, right: 8, width: 10, height: 10,
+            borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)',
+            opacity: 0.5 }} />
+
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Animated mic icon */}
+              <div style={{
+                width: 34, height: 34, borderRadius: '50%',
+                background: 'var(--accent-dim)',
+                border: '1px solid var(--accent-border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 0 12px rgba(0,200,240,0.08)',
+              }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect x="4.5" y="0.5" width="5" height="8" rx="2.5"
+                    fill="rgba(0,200,240,0.2)" stroke="var(--accent)" strokeWidth="1.2"/>
+                  <path d="M2 7a5 5 0 0 0 10 0" stroke="var(--accent)"
+                    strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+                  <line x1="7" y1="12" x2="7" y2="13.5" stroke="var(--accent)"
+                    strokeWidth="1.2" strokeLinecap="round"/>
+                  <line x1="4.5" y1="13.5" x2="9.5" y2="13.5" stroke="var(--accent)"
+                    strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+              </div>
+
+              <div>
+                <p style={{
+                  fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-display)', letterSpacing: '0.01em',
+                }}>
+                  Need help getting started?
+                </p>
+                <p style={{
+                  fontSize: 11, color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-body)', marginTop: 1,
+                }}>
+                  Talk to our voice assistant — available 24/7
+                </p>
+              </div>
+            </div>
+
+            {/* Dismiss */}
+            <button
+              onClick={function() { setExpanded(false) }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1,
+                padding: '2px 4px', flexShrink: 0,
+                transition: 'color var(--transition)',
+              }}
+              onMouseEnter={function(e) { e.currentTarget.style.color = 'var(--text-secondary)' }}
+              onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* What it can help with */}
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14,
+          }}>
+            {[
+              'How to format metadata',
+              'Choosing the right time period',
+              'Understanding KPI types',
+              'Reading the dashboard',
+            ].map(function(topic) {
+              return (
+                <span key={topic} style={{
+                  fontSize: 10, padding: '3px 9px',
+                  borderRadius: 99,
+                  background: 'var(--surface-3)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-body)',
+                }}>
+                  {topic}
+                </span>
+              )
+            })}
+          </div>
+
+          {/* Call button */}
+          <a
+            href={VAPI_PHONE_HREF}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              padding: '11px 16px',
+              background: 'linear-gradient(135deg, rgba(0,200,240,0.14) 0%, rgba(43,127,227,0.1) 100%)',
+              border: '1px solid var(--accent-border)',
+              borderRadius: 'var(--radius-md)',
+              textDecoration: 'none',
+              transition: 'all var(--transition)',
+            }}
+            onMouseEnter={function(e) {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,200,240,0.22) 0%, rgba(43,127,227,0.16) 100%)'
+              e.currentTarget.style.boxShadow = '0 0 16px rgba(0,200,240,0.1)'
+            }}
+            onMouseLeave={function(e) {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,200,240,0.14) 0%, rgba(43,127,227,0.1) 100%)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            {/* Pulsing dot */}
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: 'var(--accent)',
+              boxShadow: '0 0 6px var(--accent)',
+              flexShrink: 0,
+              animation: 'glowPulse 2s ease-in-out infinite',
+            }} />
+
+            <span style={{
+              fontSize: 14, fontWeight: 600,
+              color: 'var(--text-accent)',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.06em',
+            }}>
+              {VAPI_PHONE_NUMBER}
+            </span>
+
+            {/* Phone icon */}
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2 2h3l1.5 3.5-1.8 1.1a9 9 0 0 0 3.7 3.7l1.1-1.8L13 10v3a1 1 0 0 1-1 1A11 11 0 0 1 1 3a1 1 0 0 1 1-1Z"
+                stroke="var(--text-accent)" strokeWidth="1.2" strokeLinecap="round"
+                strokeLinejoin="round" fill="none"/>
+            </svg>
+          </a>
+
+          <p style={{
+            fontSize: 10, color: 'var(--text-tertiary)', textAlign: 'center',
+            marginTop: 8, fontFamily: 'var(--font-body)',
+          }}>
+            Free call · Powered by VAPI
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }
