@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
@@ -112,8 +112,6 @@ export default function Dashboard({ session }) {
   var [summaryState, setSummaryState] = useState('idle')
   var [narrative,    setNarrative]    = useState(null)
   var [summaryError, setSummaryError] = useState('')
-  var [exporting,    setExporting]    = useState(false)
-  var dashboardRef = useRef(null)
 
   var [decisionState, setDecisionState] = useState('idle')
   var [decisionResult, setDecisionResult] = useState(null)
@@ -245,182 +243,9 @@ export default function Dashboard({ session }) {
   }
 
 
-  async function handleExportPDF() {
-    if (!dashboardRef.current || exporting) return
-    setExporting(true)
 
-    // ── Step 1: patch live DOM before capture ────────────────────────────────
-    // html2canvas does not support:
-    //   - backdrop-filter: blur()  → renders as black
-    //   - CSS custom properties    → resolves to empty/transparent
-    //   - SVG foreignObject        → partial support
-    //
-    // Strategy: walk every element in the live dashboard div, save its current
-    // inline styles, then override with computed concrete values. Restore after.
-    var el      = dashboardRef.current
-    var patches = []   // { element, prop, before } — for restore
-
-    function patchEl(domEl) {
-      var cs = window.getComputedStyle(domEl)
-
-      function set(prop, val) {
-        patches.push({ el: domEl, prop: prop, before: domEl.style[prop] })
-        domEl.style[prop] = val
-      }
-
-      // Remove backdrop-filter — html2canvas renders it as solid black
-      if (cs.backdropFilter && cs.backdropFilter !== 'none') {
-        set('backdropFilter', 'none')
-        set('webkitBackdropFilter', 'none')
-      }
-
-      // Force opaque concrete background — replaces any var(--x) or rgba with alpha
-      var bg = cs.backgroundColor
-      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
-        // Element has no background — leave alone (SVG / text spans etc)
-      } else {
-        set('backgroundColor', bg)
-      }
-
-      // Force concrete text colour
-      var col = cs.color
-      if (col) set('color', col)
-
-      // Force border colour
-      var bc = cs.borderColor
-      if (bc) set('borderColor', bc)
-    }
-
-    // Patch root element plus all descendants
-    patchEl(el)
-    var allEls = el.querySelectorAll('*')
-    allEls.forEach(function(child) { patchEl(child) })
-
-    // Also inject a <style> tag into document head with all CSS vars resolved
-    // so that any pseudo-elements or dynamically applied styles also get real values
-    var liveRoot  = getComputedStyle(document.documentElement)
-    var cssVarText = ':root{'
-    try {
-      for (var si = 0; si < document.styleSheets.length; si++) {
-        var rules = document.styleSheets[si].cssRules || []
-        for (var ri = 0; ri < rules.length; ri++) {
-          var rule = rules[ri]
-          if (!rule.style) continue
-          for (var pi = 0; pi < rule.style.length; pi++) {
-            var pname = rule.style[pi]
-            if (pname && pname.startsWith('--')) {
-              var pval = liveRoot.getPropertyValue(pname).trim()
-              if (pval) cssVarText += pname + ':' + pval + ';'
-            }
-          }
-        }
-      }
-    } catch(e) { /* cross-origin stylesheet, skip */ }
-    cssVarText += '}'
-    var varStyle = document.createElement('style')
-    varStyle.id  = 'prism-pdf-vars'
-    varStyle.textContent = cssVarText
-    document.head.appendChild(varStyle)
-
-    try {
-      var [html2canvasMod, jspdfMod] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-      var html2canvas = html2canvasMod.default
-      var jsPDF       = jspdfMod.default
-
-      var A4W = 210; var A4H = 297; var margin = 12
-
-      var canvas = await html2canvas(el, {
-        scale:           2,
-        useCORS:         true,
-        allowTaint:      true,
-        backgroundColor: '#070D1A',
-        logging:         false,
-        imageTimeout:    20000,
-        removeContainer: true,
-        // No onclone needed — live DOM is already patched
-      })
-
-      // ── Step 2: restore live DOM ──────────────────────────────────────────
-      patches.forEach(function(p) { p.el.style[p.prop] = p.before })
-      var vs = document.getElementById('prism-pdf-vars')
-      if (vs) vs.remove()
-
-      // ── Step 3: build PDF ─────────────────────────────────────────────────
-      var pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      var imgW     = A4W - margin * 2
-      var imgH     = (canvas.height * imgW) / canvas.width
-      var headerH  = 14; var footerH = 10
-      var contentH = A4H - headerH - footerH - margin
-      var y = 0; var pageNum = 1
-
-      function drawHeader() {
-        pdf.setFillColor(13, 25, 48)
-        pdf.rect(0, 0, A4W, 14, 'F')
-        pdf.setFont('helvetica', 'bold')
-        pdf.setFontSize(9)
-        pdf.setTextColor(0, 200, 240)
-        pdf.text('PRISM', margin, 9)
-        if (periodInfo.viewLabel) {
-          pdf.setFont('helvetica', 'normal')
-          pdf.setFontSize(7)
-          pdf.setTextColor(139, 180, 216)
-          pdf.text(periodInfo.viewLabel + '  \u00b7  ' + (periodInfo.cmpLabel || ''), margin + 18, 9)
-        }
-        pdf.setFont('helvetica', 'normal')
-        pdf.setFontSize(7)
-        pdf.setTextColor(61, 96, 128)
-        pdf.text('Page ' + pageNum, A4W - margin, 9, { align: 'right' })
-        pdf.setDrawColor(0, 200, 240)
-        pdf.setLineWidth(0.3)
-        pdf.line(0, 14, A4W, 14)
-      }
-
-      function drawFooter() {
-        pdf.setFillColor(13, 25, 48)
-        pdf.rect(0, A4H - 10, A4W, 10, 'F')
-        pdf.setFont('helvetica', 'normal')
-        pdf.setFontSize(6)
-        pdf.setTextColor(61, 96, 128)
-        var now   = new Date()
-        var stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-          '  ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-        pdf.text('Generated: ' + stamp, margin, A4H - 4)
-        pdf.text('PRISM Intelligence Platform  \u00b7  Confidential', A4W - margin, A4H - 4, { align: 'right' })
-      }
-
-      while (y < imgH) {
-        drawHeader(); drawFooter()
-        var sliceH = Math.min(contentH, imgH - y)
-        var srcY   = (y / imgH) * canvas.height
-        var srcH   = (sliceH / imgH) * canvas.height
-        var slice  = document.createElement('canvas')
-        slice.width  = canvas.width
-        slice.height = Math.ceil(srcH)
-        slice.getContext('2d').drawImage(
-          canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, Math.ceil(srcH)
-        )
-        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, headerH, imgW, sliceH)
-        y += sliceH
-        if (y < imgH) { pdf.addPage(); pageNum++ }
-      }
-
-      var label    = (periodInfo.viewLabel || 'dashboard').replace(/[^a-zA-Z0-9]/g, '_')
-      var filename = 'PRISM_' + label + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
-      pdf.save(filename)
-
-    } catch (err) {
-      // Restore DOM even if capture fails
-      patches.forEach(function(p) { p.el.style[p.prop] = p.before })
-      var vs2 = document.getElementById('prism-pdf-vars')
-      if (vs2) vs2.remove()
-      console.error('PDF export error:', err)
-      alert('Export failed: ' + (err.message || 'Check browser console for details.'))
-    }
-
-    setExporting(false)
+  function handlePrint() {
+    window.print()
   }
 
   async function handleGenerateDecisions() {
@@ -613,7 +438,7 @@ export default function Dashboard({ session }) {
   }
 
   return (
-    <div ref={dashboardRef} style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
+    <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
 
       {/* ── Period Banner ─────────────────────────────────────────── */}
       {periodInfo.viewLabel && (
@@ -698,50 +523,48 @@ export default function Dashboard({ session }) {
               </button>
               )}
 
-              {/* 3 — Export PDF: small icon button with tooltip, separated by a divider */}
+              {/* Divider + Print to PDF icon button */}
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <div style={{ position: 'relative' }} title={exporting ? 'Exporting...' : 'Export dashboard as PDF'}>
-                <button
-                  onClick={handleExportPDF}
-                  disabled={exporting}
-                  style={{
-                    width: 36, height: 36,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: exporting ? 'transparent' : 'var(--surface-2)',
-                    border: '1px solid ' + (exporting ? 'var(--border)' : 'rgba(0,180,160,0.25)'),
-                    borderRadius: 'var(--radius-md)',
-                    color: exporting ? 'var(--text-tertiary)' : '#00B4A0',
-                    cursor: exporting ? 'not-allowed' : 'pointer',
-                    transition: 'all var(--transition)', flexShrink: 0,
-                    padding: 0,
-                  }}
-                  onMouseEnter={function(e) {
-                    if (!exporting) {
-                      e.currentTarget.style.background = 'rgba(0,180,160,0.1)'
-                      e.currentTarget.style.boxShadow  = '0 0 10px rgba(0,180,160,0.15)'
-                    }
-                  }}
-                  onMouseLeave={function(e) {
-                    e.currentTarget.style.background = exporting ? 'transparent' : 'var(--surface-2)'
-                    e.currentTarget.style.boxShadow  = 'none'
-                  }}
-                >
-                  {exporting
-                    ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5, borderTopColor: '#00B4A0', borderColor: 'var(--border)' }} />
-                    : <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <path d="M7 1.5v8M4 7l3 3.5 3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M1.5 10.5v1.5a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                      </svg>
-                  }
-                </button>
-              </div>
+              <button
+                onClick={handlePrint}
+                title="Print / Save as PDF"
+                className="prism-print-hide"
+                style={{
+                  width: 36, height: 36,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'var(--surface-2)',
+                  border: '1px solid rgba(0,180,160,0.25)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#00B4A0',
+                  cursor: 'pointer',
+                  transition: 'all var(--transition)',
+                  flexShrink: 0, padding: 0,
+                }}
+                onMouseEnter={function(e) {
+                  e.currentTarget.style.background   = 'rgba(0,180,160,0.1)'
+                  e.currentTarget.style.borderColor  = 'rgba(0,180,160,0.5)'
+                  e.currentTarget.style.boxShadow    = '0 0 10px rgba(0,180,160,0.15)'
+                }}
+                onMouseLeave={function(e) {
+                  e.currentTarget.style.background  = 'var(--surface-2)'
+                  e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'
+                  e.currentTarget.style.boxShadow   = 'none'
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
+                </svg>
+              </button>
 
             </div>
           </div>
 
           {/* Token meter — always visible once dashboard loads (queries usage seeded from SetupScreen) */}
           {tokenCalls.length > 0 && (
-            <div style={{ marginTop: 10 }}>
+            <div className="prism-print-hide" style={{ marginTop: 10 }}>
               <TokenMeter calls={tokenCalls} />
             </div>
           )}
