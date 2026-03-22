@@ -316,7 +316,7 @@ function formatPreAnalysis(preAnalysis) {
 // ── Intent-specific query builder ────────────────────────────────────────────
 // All SQL strings use double-quote JS delimiters to avoid collision with
 // Postgres data->>'field' single quotes inside the string.
-function buildIntentQueries(intent, datasetId, f, CF) {
+function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
   if (!intent || !intent.type || intent.type === "null") return []
 
   var queries = []
@@ -324,6 +324,27 @@ function buildIntentQueries(intent, datasetId, f, CF) {
 
   // Safe ORDER BY — casts to integer only when field name looks numeric/sequential.
   // Falls back to plain text sort for display-label fields like interval names.
+  // Look up the correct SQL aggregation function for a metric field.
+  // Uses the metadata aggregation column if available.
+  // Falls back to AVG for point_in_time and SUM for cumulative.
+  function aggFn(fieldName) {
+    var meta = metaRows && metaRows.find(function(m) { return m.field_name === fieldName })
+    if (meta) {
+      var agg = (meta.aggregation || '').toUpperCase()
+      if (agg === 'SUM')            return 'SUM'
+      if (agg === 'AVG')            return 'AVG'
+      if (agg === 'COUNT')          return 'COUNT'
+      if (agg === 'MAX')            return 'MAX'
+      if (agg === 'MIN')            return 'MIN'
+      if (agg === 'COUNT_DISTINCT') return 'COUNT'  // fallback for drilldown context
+      // Fall through to accumulation_type heuristic
+      if (meta.accumulation_type === 'cumulative')    return 'SUM'
+      if (meta.accumulation_type === 'point_in_time') return 'AVG'
+    }
+    // Default: if no metadata, use AVG (safe for scores/ratios, slightly undercounts cumulative)
+    return 'AVG'
+  }
+
   function safeIntOrder(field) {
     if (/sort|order|seq|num|idx|id$/i.test(field)) {
       return "CASE WHEN (data->>'" + field + "') ~ '^[0-9]+$' THEN (data->>'" + field + "')::integer ELSE 0 END ASC, data->>'" + field + "' ASC"
@@ -341,7 +362,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
     var mDisp  = intent.primary_metric_display || metric
 
     var rankSQL = "SELECT data->>'" + entity + "' AS label, " +
-      "AVG(COALESCE((data->>'" + metric + "')::numeric, 0)) AS current_value " +
+      "" + aggFn(metric) + "(COALESCE((data->>'" + metric + "')::numeric, 0)) AS current_value " +
       base + " AND data->>'" + entity + "' IS NOT NULL AND data->>'" + entity + "' != '' " +
       "GROUP BY data->>'" + entity + "' ORDER BY current_value " + dir + " LIMIT " + topN
 
@@ -354,7 +375,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       value_key:        "current_value",
       label_key:        "label",
       unit:             "",
-      insight:          "Ranks every " + eDisp + " by average " + mDisp + ". " + (dir === "DESC" ? "Highest values first." : "Lowest values first."),
+      insight:          "Ranks every " + eDisp + " by " + aggFn(metric).toLowerCase() + " " + mDisp + ". " + (dir === "DESC" ? "Highest values first." : "Lowest values first."),
       priority:         50,
       intent_generated: true,
     })
@@ -395,7 +416,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       : "GROUP BY data->>'" + ddLabel + "'"
 
     var drillSQL = "SELECT data->>'" + ddLabel + "' AS label, " +
-      "AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
+      "" + aggFn(ddMetric) + "(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
       base + " AND data->>'" + ddLabel + "' IS NOT NULL " +
       groupByDrill + " ORDER BY " + safeIntOrder(ddDim)
 
@@ -408,7 +429,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       value_key:        "current_value",
       label_key:        "label",
       unit:             "",
-      insight:          "Average " + ddMDisp + " per " + ddDisp.toLowerCase() + " across all entities. Peaks indicate highest-stress slots.",
+      insight:          aggFn(ddMetric) + " of " + ddMDisp + " per " + ddDisp.toLowerCase() + " across all entities.",
       priority:         52,
       intent_generated: true,
     })
@@ -421,13 +442,13 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       "WHERE dataset_id = " + datasetId + " AND " + f.curCond + CF +
       " AND data->>'" + ddEntity + "' IS NOT NULL " +
       "GROUP BY data->>'" + ddEntity + "' " +
-      "ORDER BY AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) DESC " +
+      "ORDER BY " + aggFn(ddMetric) + "(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) DESC " +
       "LIMIT " + ddTopN
 
     var heatSQL = "SELECT data->>'" + ddEntity + "' AS label, " +
       "data->>'" + ddLabel + "' AS slot, " +
       (ddDim !== ddLabel ? "data->>'" + ddDim + "' AS slot_sort, " : "data->>'" + ddLabel + "' AS slot_sort, ") +
-      "AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
+      "" + aggFn(ddMetric) + "(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
       base + " AND data->>'" + ddEntity + "' IN (" + subquery + ") " +
       groupByHeat + " ORDER BY data->>'" + ddEntity + "', " + safeIntOrder(ddDim)
 
@@ -475,7 +496,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
     })
 
     var distBarSQL = "SELECT data->>'" + distDim + "' AS label, " +
-      "AVG(COALESCE((data->>'" + distMetric + "')::numeric, 0)) AS current_value " +
+      "" + aggFn(distMetric) + "(COALESCE((data->>'" + distMetric + "')::numeric, 0)) AS current_value " +
       base + " AND data->>'" + distDim + "' IS NOT NULL " +
       "GROUP BY data->>'" + distDim + "' ORDER BY current_value DESC"
 
@@ -488,7 +509,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       value_key:        "current_value",
       label_key:        "label",
       unit:             "",
-      insight:          "Average " + distMetric + " for each " + distDim + " category.",
+      insight:          aggFn(distMetric) + " of " + distMetric + " for each " + distDim + " category.",
       priority:         51,
       intent_generated: true,
     })
@@ -505,7 +526,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
       : "GROUP BY data->>'" + timeLabel + "'"
 
     var temporalSQL = "SELECT data->>'" + timeLabel + "' AS label, " +
-      "AVG(COALESCE((data->>'" + timeMet + "')::numeric, 0)) AS current_value, " +
+      "" + aggFn(timeMet) + "(COALESCE((data->>'" + timeMet + "')::numeric, 0)) AS current_value, " +
       "COUNT(*) AS record_count " +
       base + " AND data->>'" + timeLabel + "' IS NOT NULL " +
       groupByTemporal + " ORDER BY " + safeIntOrder(timeDim)
@@ -876,7 +897,7 @@ export async function POST(request) {
     // Append intent-specific bonus queries
     var intent = userContext && userContext.intent ? userContext.intent : null
     if (intent && intent.type && intent.type !== 'null') {
-      var intentQueries = buildIntentQueries(intent, datasetId, f, CF)
+      var intentQueries = buildIntentQueries(intent, datasetId, f, CF, metaRows)
       console.log('=== Intent queries built: ' + intentQueries.length + ' (' + intent.type + ')')
       queries = queries.concat(intentQueries)
     }
