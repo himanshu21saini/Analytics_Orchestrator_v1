@@ -684,6 +684,8 @@ export function SetupScreenDev({ onReady }) {
               {error}
             </p>
           )}
+
+          <VapiHelpWidget />
         </div>
       </div>
     </div>
@@ -1183,6 +1185,8 @@ export function SetupScreenProd({ onReady }) {
             : showConfirm ? 'Build with this context'
             : 'Generate Intelligence'}
           </button>
+
+          <VapiHelpWidget />
         </div>
 
       </div>
@@ -1252,6 +1256,406 @@ function AutoGenResult({ result }) {
           }
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── VapiHelpWidget ────────────────────────────────────────────────────────────
+// Browser-based voice call using the VAPI Web SDK.
+// No phone number needed — user clicks, mic activates, browser handles the call.
+//
+// Required environment variables (add to Vercel):
+//   NEXT_PUBLIC_VAPI_KEY          — your VAPI public key
+//   NEXT_PUBLIC_VAPI_ASSISTANT_ID — your VAPI assistant ID
+//
+// Install the SDK once in your project:
+//   npm install @vapi-ai/web
+
+var VAPI_PUBLIC_KEY    = process.env.NEXT_PUBLIC_VAPI_KEY
+var VAPI_ASSISTANT_ID  = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
+
+function VapiHelpWidget() {
+  var [expanded,    setExpanded]    = useState(false)
+  var [callState,   setCallState]   = useState('idle')    // idle | connecting | active | ended
+  var [isMuted,     setIsMuted]     = useState(false)
+  var [transcript,  setTranscript]  = useState([])        // { role, text }
+  var [vapiInst,    setVapiInst]    = useState(null)
+  var [volume,      setVolume]      = useState(0)
+  var [errorMsg,    setErrorMsg]    = useState('')
+
+  // Lazily load the VAPI SDK and create the instance once
+  async function getVapi() {
+    if (vapiInst) return vapiInst
+    try {
+      var mod  = await import('@vapi-ai/web')
+      var Vapi = mod.default || mod.Vapi
+      var inst = new Vapi(VAPI_PUBLIC_KEY)
+
+      inst.on('call-start',  function()   { setCallState('active'); setErrorMsg('') })
+      inst.on('call-end',    function()   { setCallState('ended');  setVolume(0) })
+      inst.on('volume-level',function(v)  { setVolume(v) })
+      inst.on('error',       function(e)  {
+        console.error('VAPI error:', e)
+        setErrorMsg('Connection error — please try again.')
+        setCallState('idle')
+      })
+      inst.on('message', function(msg) {
+        // Collect transcript lines from both sides
+        if (msg && msg.type === 'transcript' && msg.transcriptType === 'final') {
+          setTranscript(function(prev) {
+            return prev.concat({ role: msg.role, text: msg.transcript }).slice(-6) // keep last 6 lines
+          })
+        }
+      })
+
+      setVapiInst(inst)
+      return inst
+    } catch (err) {
+      setErrorMsg('Could not load voice SDK. Check your network and try again.')
+      setCallState('idle')
+      return null
+    }
+  }
+
+  async function handleStartCall() {
+    if (!VAPI_PUBLIC_KEY || !VAPI_ASSISTANT_ID) {
+      setErrorMsg('VAPI keys not configured. Add NEXT_PUBLIC_VAPI_KEY and NEXT_PUBLIC_VAPI_ASSISTANT_ID to Vercel.')
+      return
+    }
+    setCallState('connecting')
+    setTranscript([])
+    setErrorMsg('')
+    var inst = await getVapi()
+    if (!inst) return
+    try {
+      await inst.start(VAPI_ASSISTANT_ID)
+    } catch (err) {
+      setErrorMsg('Could not start call: ' + (err.message || 'Unknown error'))
+      setCallState('idle')
+    }
+  }
+
+  function handleEndCall() {
+    if (vapiInst) vapiInst.stop()
+    setCallState('idle')
+    setVolume(0)
+    setIsMuted(false)
+    setTranscript([])
+  }
+
+  function handleToggleMute() {
+    if (!vapiInst) return
+    var next = !isMuted
+    vapiInst.setMuted(next)
+    setIsMuted(next)
+  }
+
+  function handleDismiss() {
+    handleEndCall()
+    setExpanded(false)
+    setErrorMsg('')
+  }
+
+  // Volume bar — 5 segments lighting up based on volume 0-1
+  function VolumeBar() {
+    var segs = 5
+    var lit  = Math.round(volume * segs)
+    return (
+      <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+        {Array.from({ length: segs }).map(function(_, i) {
+          var h       = 6 + i * 3
+          var active  = i < lit
+          return (
+            <div key={i} style={{
+              width: 3, height: h,
+              borderRadius: 2,
+              background: active ? 'var(--accent)' : 'var(--surface-3)',
+              transition: 'background 80ms',
+            }} />
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      {!expanded ? (
+        // ── Collapsed: subtle divider prompt ──────────────────────────
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <button
+            onClick={function() { setExpanded(true) }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+              <rect x="4" y="0.5" width="4" height="6.5" rx="2"
+                fill="none" stroke="var(--text-tertiary)" strokeWidth="1.2"/>
+              <path d="M2 6a4 4 0 0 0 8 0" stroke="var(--text-tertiary)"
+                strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+              <line x1="6" y1="10" x2="6" y2="11.5" stroke="var(--text-tertiary)"
+                strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+              Not sure where to start?
+            </span>
+          </button>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
+
+      ) : (
+        // ── Expanded: voice call card ──────────────────────────────────
+        <div className="fade-in" style={{
+          background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+          border: '1px solid ' + (callState === 'active' ? 'var(--accent-border)' : 'var(--border)'),
+          borderRadius: 'var(--radius-lg)',
+          padding: '18px 20px',
+          position: 'relative', overflow: 'hidden',
+          transition: 'border-color var(--transition)',
+          boxShadow: callState === 'active' ? '0 0 24px rgba(0,200,240,0.06)' : 'none',
+        }}>
+          {/* Top accent line */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+            background: 'linear-gradient(90deg, transparent, var(--accent), transparent)',
+            opacity: callState === 'active' ? 0.5 : 0.2,
+            transition: 'opacity var(--transition)',
+          }} />
+
+          {/* Corner brackets */}
+          <div style={{ position: 'absolute', top: 8, left: 8, width: 10, height: 10,
+            borderTop: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', opacity: 0.5 }} />
+          <div style={{ position: 'absolute', top: 8, right: 8, width: 10, height: 10,
+            borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', opacity: 0.5 }} />
+
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Mic orb — pulses when active */}
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%',
+                background: callState === 'active' ? 'rgba(0,200,240,0.15)' : 'var(--accent-dim)',
+                border: '1px solid var(--accent-border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: callState === 'active' ? '0 0 16px rgba(0,200,240,0.2)' : '0 0 8px rgba(0,200,240,0.06)',
+                transition: 'all var(--transition)',
+              }}>
+                {callState === 'connecting' ? (
+                  <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5 }} />
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <rect x="4.5" y="0.5" width="5" height="8" rx="2.5"
+                      fill={callState === 'active' ? 'rgba(0,200,240,0.25)' : 'rgba(0,200,240,0.15)'}
+                      stroke="var(--accent)" strokeWidth="1.2"/>
+                    <path d="M2 7a5 5 0 0 0 10 0" stroke="var(--accent)"
+                      strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+                    <line x1="7" y1="12" x2="7" y2="13.5" stroke="var(--accent)"
+                      strokeWidth="1.2" strokeLinecap="round"/>
+                    <line x1="4.5" y1="13.5" x2="9.5" y2="13.5" stroke="var(--accent)"
+                      strokeWidth="1.2" strokeLinecap="round"/>
+                  </svg>
+                )}
+              </div>
+
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-display)' }}>
+                  {callState === 'idle'       && 'Need help getting started?'}
+                  {callState === 'connecting' && 'Connecting...'}
+                  {callState === 'active'     && 'Call in progress'}
+                  {callState === 'ended'      && 'Call ended'}
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-body)', marginTop: 1 }}>
+                  {callState === 'idle'       && 'Talk to our voice assistant · Available 24/7'}
+                  {callState === 'connecting' && 'Please wait...'}
+                  {callState === 'active'     && 'Speak clearly · Browser mic is active'}
+                  {callState === 'ended'      && 'Thanks for calling'}
+                </p>
+              </div>
+            </div>
+
+            {/* Volume bar (active only) + dismiss */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {callState === 'active' && <VolumeBar />}
+              <button
+                onClick={handleDismiss}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-tertiary)', fontSize: 16, padding: '2px 4px',
+                  transition: 'color var(--transition)' }}
+                onMouseEnter={function(e) { e.currentTarget.style.color = 'var(--text-secondary)' }}
+                onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text-tertiary)' }}
+              >×</button>
+            </div>
+          </div>
+
+          {/* Topic chips — idle only */}
+          {callState === 'idle' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {['How to format metadata','Choosing the right time period','Understanding KPI types','Reading the dashboard'].map(function(t) {
+                return (
+                  <span key={t} style={{ fontSize: 10, padding: '3px 9px', borderRadius: 99,
+                    background: 'var(--surface-3)', border: '1px solid var(--border)',
+                    color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+                    {t}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Live transcript (active only) */}
+          {callState === 'active' && transcript.length > 0 && (
+            <div style={{
+              marginBottom: 14, padding: '10px 12px',
+              background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              maxHeight: 120, overflowY: 'auto',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              {transcript.map(function(line, i) {
+                var isUser = line.role === 'user'
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 600, textTransform: 'uppercase',
+                      letterSpacing: '0.08em', flexShrink: 0, marginTop: 1,
+                      color: isUser ? 'var(--text-accent)' : 'var(--text-tertiary)',
+                      fontFamily: 'var(--font-mono)', width: 28,
+                    }}>
+                      {isUser ? 'You' : 'AI'}
+                    </span>
+                    <span style={{ fontSize: 11, color: isUser ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                      {line.text}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Error */}
+          {errorMsg && (
+            <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)',
+              padding: '7px 10px', borderRadius: 'var(--radius-sm)',
+              border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12,
+              fontFamily: 'var(--font-body)' }}>
+              {errorMsg}
+            </p>
+          )}
+
+          {/* Action buttons */}
+          {(callState === 'idle' || callState === 'ended') && (
+            <button
+              onClick={handleStartCall}
+              style={{
+                width: '100%', padding: '11px 16px',
+                background: 'linear-gradient(135deg, rgba(0,200,240,0.14) 0%, rgba(43,127,227,0.1) 100%)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                cursor: 'pointer', transition: 'all var(--transition)',
+              }}
+              onMouseEnter={function(e) {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,200,240,0.22) 0%, rgba(43,127,227,0.16) 100%)'
+                e.currentTarget.style.boxShadow  = '0 0 16px rgba(0,200,240,0.1)'
+              }}
+              onMouseLeave={function(e) {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,200,240,0.14) 0%, rgba(43,127,227,0.1) 100%)'
+                e.currentTarget.style.boxShadow  = 'none'
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%',
+                background: 'var(--accent)', boxShadow: '0 0 6px var(--accent)',
+                flexShrink: 0, animation: 'glowPulse 2s ease-in-out infinite' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-accent)',
+                fontFamily: 'var(--font-display)', letterSpacing: '0.06em' }}>
+                {callState === 'ended' ? 'Call Again' : 'Start Voice Call'}
+              </span>
+            </button>
+          )}
+
+          {callState === 'active' && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              {/* Mute toggle */}
+              <button
+                onClick={handleToggleMute}
+                style={{
+                  flex: 1, padding: '9px 12px',
+                  background: isMuted ? 'rgba(224,85,85,0.1)' : 'var(--surface-3)',
+                  border: '1px solid ' + (isMuted ? 'rgba(224,85,85,0.3)' : 'var(--border)'),
+                  borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'all var(--transition)',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  {isMuted ? (
+                    // Mic with X
+                    <>
+                      <rect x="4" y="0.5" width="4" height="6.5" rx="2"
+                        fill="none" stroke="var(--red-text)" strokeWidth="1.2"/>
+                      <line x1="2" y1="2" x2="10" y2="10" stroke="var(--red-text)" strokeWidth="1.2" strokeLinecap="round"/>
+                    </>
+                  ) : (
+                    // Mic normal
+                    <>
+                      <rect x="4" y="0.5" width="4" height="6.5" rx="2"
+                        fill="none" stroke="var(--text-secondary)" strokeWidth="1.2"/>
+                      <path d="M2 6a4 4 0 0 0 8 0" stroke="var(--text-secondary)"
+                        strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+                    </>
+                  )}
+                </svg>
+                <span style={{ fontSize: 11, color: isMuted ? 'var(--red-text)' : 'var(--text-secondary)',
+                  fontFamily: 'var(--font-body)' }}>
+                  {isMuted ? 'Unmute' : 'Mute'}
+                </span>
+              </button>
+
+              {/* End call */}
+              <button
+                onClick={handleEndCall}
+                style={{
+                  flex: 1, padding: '9px 12px',
+                  background: 'rgba(224,85,85,0.1)',
+                  border: '1px solid rgba(224,85,85,0.3)',
+                  borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  transition: 'all var(--transition)',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M1 8.5h2.5l1-2-1.3-.8a7 7 0 0 1 3.1-3.1L7 3.5l2-1V5a8 8 0 0 0 2-3.4A10 10 0 0 0 1 8.5Z"
+                    stroke="var(--red-text)" strokeWidth="1.1" strokeLinejoin="round" fill="none"/>
+                  <line x1="2" y1="2" x2="10" y2="10" stroke="var(--red-text)" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontSize: 11, color: 'var(--red-text)', fontFamily: 'var(--font-body)' }}>
+                  End Call
+                </span>
+              </button>
+            </div>
+          )}
+
+          {callState === 'connecting' && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+              gap: 8, padding: '10px', opacity: 0.6 }}>
+              <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+                Requesting microphone...
+              </span>
+            </div>
+          )}
+
+          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textAlign: 'center',
+            marginTop: 10, fontFamily: 'var(--font-body)' }}>
+            Browser mic required · Powered by VAPI
+          </p>
+        </div>
+      )}
     </div>
   )
 }
