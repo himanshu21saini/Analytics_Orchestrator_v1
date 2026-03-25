@@ -703,6 +703,9 @@ export default function Dashboard({ session }) {
     })
   }}
   renderChart={renderChart}
+        questionSQLs={questionSQLCache}
+  onQuestionQueries={function(qs) {
+    setQuestionSQLCache(function(prev) { return prev.concat(qs) })
 />
       )}
 
@@ -722,7 +725,7 @@ export default function Dashboard({ session }) {
   )
 }
 
-function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, datasetId, metadata, userContext, onTokens, renderChart }) {
+function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, datasetId, metadata, userContext, onTokens, renderChart, questionSQLs, onQuestionQueries }) {
 
   var [open, setOpen] = useState(false); var [expandedId, setExpandedId] = useState(null)
   var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
@@ -802,6 +805,34 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
                   </div>
                 )
               })}
+              {questionSQLs && questionSQLs.length > 0 && (
+  <>
+    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
+      Ask a Question queries
+    </div>
+    {questionSQLs.map(function(q) {
+      var isExpanded = expandedId === q.id
+      return (
+        <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>ask</span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
+          </button>
+          {isExpanded && (
+            <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)' }}>
+              <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.7, color: 'var(--text-secondary)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                {(q.sql || '').replace(/\s+(SELECT|FROM|WHERE|AND|GROUP BY|ORDER BY|HAVING|LIMIT|LEFT JOIN)\s+/gi, function(m) { return '\n' + m.trim() + ' ' })}
+              </pre>
+              <CopyButton text={q.sql} />
+            </div>
+          )}
+        </div>
+      )
+    })}
+  </>
+)}
             </>
           )}
         </div>
@@ -816,6 +847,7 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
         userContext={userContext}
         onTokens={onTokens}
         renderChart={renderChart}
+         onQuestionQueries={onQuestionQueries}
       />
 
     </div>
@@ -1096,7 +1128,7 @@ var QuestionPanel = function QuestionPanel(props) {
   var userContext = props.userContext  || null
   var onTokens    = props.onTokens    || function() {}
   var renderChart = props.renderChart || function() { return null }
-
+  var onQuestionQueries = props.onQuestionQueries || function() {}
   var [question,  setQuestion]  = useState('')
   var [loading,   setLoading]   = useState(false)
   var [error,     setError]     = useState('')
@@ -1133,6 +1165,20 @@ var QuestionPanel = function QuestionPanel(props) {
           dependentFields: json.dependentFields || [],
         }])
       })
+if (json.queries) {
+  onQuestionQueries(
+    json.queries
+      .filter(function(q) { return q.sql })
+      .map(function(q) { 
+        return { 
+          id:    q.id + '_' + Date.now(), 
+          title: q.title, 
+          sql:   q.sql 
+        } 
+      })
+  )
+}
+      
       setQuestion('')
     } catch(err) {
       setError(err.message)
