@@ -41,7 +41,22 @@ function parseTimeFromQuestion(question) {
     var mMax = qtr * 3
     return { year: yr, monthMin: mMin, monthMax: mMax, label: 'Q' + qtr + ' ' + yr, type: 'quarter' }
   }
-
+  // Pattern: "last N months"
+  var lastNRe = /last\s+(\d+)\s+months?/i
+  var m3 = q.match(lastNRe)
+  if (m3) {
+    var n = parseInt(m3[1])
+    var toDate   = new Date()
+    var fromDate = new Date(toDate.getFullYear(), toDate.getMonth() - n + 1, 1)
+    return {
+      type:       'range',
+      fromYear:   fromDate.getFullYear(),
+      fromMonth:  fromDate.getMonth() + 1,
+      toYear:     toDate.getFullYear(),
+      toMonth:    toDate.getMonth() + 1,
+      label:      'Last ' + n + ' months',
+    }
+  }
   return null
 }
 
@@ -58,6 +73,17 @@ function buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf) {
       var m = "(data->>'"+mf+"')::integer >= " + parsedTime.monthMin + " AND (data->>'"+mf+"')::integer <= " + parsedTime.monthMax
       return { cond: y + ' AND ' + m, label: parsedTime.label }
     }
+    // AFTER the existing 'month' and 'quarter' blocks:
+if (parsedTime.type === 'range') {
+  var cond =
+    "((data->>'"+yf+"')::integer > " + parsedTime.fromYear +
+    " OR ((data->>'"+yf+"')::integer = " + parsedTime.fromYear +
+    " AND (data->>'"+mf+"')::integer >= " + parsedTime.fromMonth + "))" +
+    " AND ((data->>'"+yf+"')::integer < " + parsedTime.toYear +
+    " OR ((data->>'"+yf+"')::integer = " + parsedTime.toYear +
+    " AND (data->>'"+mf+"')::integer <= " + parsedTime.toMonth + "))"
+  return { cond: cond, label: parsedTime.label }
+}
   }
 
   // Fall back to dashboard current period
