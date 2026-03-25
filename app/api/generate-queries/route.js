@@ -944,7 +944,7 @@ export async function POST(request) {
       model:       'gpt-4o',
       metadata:    metaRows,
       timePeriod,
-      periodInfo:  { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel },
+     periodInfo:  { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel, yf: f.yf, mf: f.mf, curYear: f.curYear, curCond: f.curCond },
       preAnalysis,
       coverageData: { kpiCoverage, dimCoverage, kpiCapUsed: kpiCoverage.filter(function(k) { return k.reason === 'shown' }).length, kpiCapMax: 8 },
       usage:       { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' },
