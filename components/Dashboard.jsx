@@ -134,6 +134,7 @@ export default function Dashboard({ session }) {
   // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
   var [trendSQLCache,  setTrendSQLCache]  = useState({})
+  var [questionSQLCache, setQuestionSQLCache] = useState([])
 
   function handleTrendData(fieldName, data, meta, sql) {
     setTrendDataCache(function(prev) {
