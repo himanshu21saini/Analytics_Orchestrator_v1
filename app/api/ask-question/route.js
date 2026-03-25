@@ -199,6 +199,7 @@ export async function POST(request) {
     '7. Always alias the main value column as "current_value" and the label column as "label"',
     '8. For trend/time series: alias as "period" and "value"',
     '9. 1f. Chart type selection: when query results naturally group into categories-within-categories (e.g. top/worst per region, ranking within segments), always use "bar" chart_type with a concatenated label (region + branch) so context is visible. Never return two separate dimension columns for a bar chart — the renderer only reads one label column.',
+    '10. For "why" questions or questions asking for explanation, always generate 2 queries: (1) the primary metric query that answers the "what" (e.g. which branch, what value), and (2) a supporting breakdown query that helps explain the "why" (e.g. distribution of stress types, interval-level detail for that entity). The narrative will synthesise both into an explanation. Never try to answer "why" with a single aggregated row.',
     '',
     '## OUTPUT FORMAT — JSON only',
     '{',
