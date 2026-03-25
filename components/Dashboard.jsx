@@ -559,7 +559,23 @@ export default function Dashboard({ session }) {
           }}
         />
       )}
-
+      {/* ── Question Panel ── */}
+      <QuestionPanel
+        panelRef={questionPanelRef}
+        datasetId={session.datasetId}
+        metadata={metadata}
+        periodInfo={periodInfo}
+        userContext={session.userContext}
+        onTokens={function(u) {
+          setTokenCalls(function(prev) {
+            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
+          })
+        }}
+        renderChart={renderChart}
+        onQuestionQueries={function(qs) {
+          setQuestionSQLCache(function(prev) { return prev.concat(qs) })
+        }}
+      />
       {prefs.coveragePanel !== false && (
         <CoveragePanel coverageData={session.coverageData} />
       )}
@@ -687,17 +703,6 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
             </>
           )}
 
-          {/* ── Question Panel ── */}
-          <QuestionPanel
-            panelRef={questionPanelRef}
-            datasetId={datasetId}
-            metadata={metadata}
-            periodInfo={periodInfo}
-            userContext={userContext}
-            onTokens={onTokens}
-            renderChart={renderChart}
-            onQuestionQueries={onQuestionQueries}
-          />
 
         </div>
       )}
