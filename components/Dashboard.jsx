@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, forwardRef } from 'react'
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
@@ -104,21 +104,6 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
         )}
       </div>
       {children}
-
-      {/* ── Question Panel ────────────────────────────────────────────── */}
-      <QuestionPanel
-        ref={questionPanelRef}
-        datasetId={session.datasetId}
-        metadata={metadata}
-        periodInfo={periodInfo}
-        userContext={session.userContext}
-        onTokens={function(u) {
-          setTokenCalls(function(prev) {
-            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
-          })
-        }}
-        renderChart={renderChart}
-      />
 
     </div>
   )
@@ -804,10 +789,26 @@ function QueryInspector({ queries, periodInfo, trendSQLs }) {
           )}
         </div>
       )}
+
+      {/* ── Question Panel ─────────────────────────────────────────────── */}
+      <QuestionPanel
+        ref={questionPanelRef}
+        datasetId={session.datasetId}
+        metadata={metadata}
+        periodInfo={periodInfo}
+        userContext={session.userContext}
+        onTokens={function(u) {
+          setTokenCalls(function(prev) {
+            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
+          })
+        }}
+        renderChart={renderChart}
+      />
+
     </div>
   )
 }
- 
+
 function CopyButton({ text }) {
   var [copied, setCopied] = useState(false)
   return (
@@ -1074,7 +1075,7 @@ function DrillDownChart({ result, idx, periodInfo }) {
 // Each question generates its own charts + narrative answer block.
 // Context filters from setup always apply — cannot be overridden by questions.
 
-var QuestionPanel = React.forwardRef(function QuestionPanel(props, ref) {
+var QuestionPanel = forwardRef(function QuestionPanel(props, ref) {
   var datasetId   = props.datasetId
   var metadata    = props.metadata    || []
   var periodInfo  = props.periodInfo  || {}
