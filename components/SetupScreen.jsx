@@ -863,8 +863,8 @@ export function SetupScreenProd({ onReady }) {
     var wb     = file.name.toLowerCase().endsWith('.csv')
       ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' })
       : XLSX.read(buffer, { type: 'array' })
-
-    var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null })
+var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: false, dateNF: 'yyyy-mm-dd' })
+   
     if (!rows.length) throw new Error('File is empty.')
 
     // Step 1 — initialise dataset (get ID back, or replace existing)
