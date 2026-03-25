@@ -1,6 +1,15 @@
 import * as XLSX from 'xlsx'
 import { execute, query } from '../../../lib/db'
 
+// Tell Next.js this route accepts large payloads
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '25mb',
+    },
+  },
+}
+
 export async function POST(request) {
   try {
     var formData = await request.formData()
@@ -43,15 +52,30 @@ export async function POST(request) {
       datasetId = result[0].id
     }
 
-    // Batch insert rows
-    for (var i = 0; i < rows.length; i += 100) {
-      var batch = rows.slice(i, i + 100)
+    // ── Bulk insert using multi-row VALUES batches ────────────────────────────
+    // Old approach: one INSERT per row = thousands of round trips to Neon.
+    // New approach: batch 500 rows per INSERT = ~10x fewer round trips.
+    // Each batch builds: INSERT INTO dataset_rows (dataset_id, data) VALUES ($1,$2),($3,$4)...
+    // 500 rows × ~200 bytes JSON ≈ 100KB per batch — well within Neon's limits.
+
+    var BATCH_SIZE = 500
+
+    for (var i = 0; i < rows.length; i += BATCH_SIZE) {
+      var batch  = rows.slice(i, i + BATCH_SIZE)
+      var values = []
+      var params = []
+      var paramIdx = 1
+
       for (var j = 0; j < batch.length; j++) {
-        await execute(
-          'INSERT INTO dataset_rows (dataset_id, data) VALUES ($1, $2)',
-          [datasetId, JSON.stringify(batch[j])]
-        )
+        values.push('($' + paramIdx + ', $' + (paramIdx + 1) + ')')
+        params.push(datasetId, JSON.stringify(batch[j]))
+        paramIdx += 2
       }
+
+      await execute(
+        'INSERT INTO dataset_rows (dataset_id, data) VALUES ' + values.join(', '),
+        params
+      )
     }
 
     return Response.json({
