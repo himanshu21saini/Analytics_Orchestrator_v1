@@ -687,8 +687,7 @@ export default function Dashboard({ session }) {
       )}
 
       {/* ── Query Inspector ───────────────────────────────────────────── */}
-      {prefs.queryInspector !== false && (
-        <QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} />
+      {prefs.queryInspector !== false && (<QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} questionPanelRef={questionPanelRef} />
       )}
 
       {/* ── Coverage Panel ────────────────────────────────────────────── */}
@@ -707,7 +706,8 @@ export default function Dashboard({ session }) {
   )
 }
 
-function QueryInspector({ queries, periodInfo, trendSQLs }) {
+function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef }) {
+
   var [open, setOpen] = useState(false); var [expandedId, setExpandedId] = useState(null)
   var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
   var total = (queries ? queries.length : 0) + trendEntries.length
