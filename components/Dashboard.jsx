@@ -791,8 +791,8 @@ function QueryInspector({ queries, periodInfo, trendSQLs }) {
       )}
 
       {/* ── Question Panel ─────────────────────────────────────────────── */}
-<QuestionPanel
-  panelRef={questionPanelRef}
+      <QuestionPanel
+        panelRef={questionPanelRef}
         datasetId={session.datasetId}
         metadata={metadata}
         periodInfo={periodInfo}
@@ -1362,4 +1362,5 @@ var QuestionPanel = function QuestionPanel(props) {
     </div>
   )
 })
+
 
