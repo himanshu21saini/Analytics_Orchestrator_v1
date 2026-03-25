@@ -1134,7 +1134,7 @@ var QuestionPanel = function QuestionPanel(props) {
   var [loading,   setLoading]   = useState(false)
   var [error,     setError]     = useState('')
   var [answers,   setAnswers]   = useState([])   // array of answer blocks
-
+  var [expandedAnswerId, setExpandedAnswerId] = useState(null)
   async function handleAsk() {
     var q = question.trim()
     if (!q || loading) return
@@ -1155,17 +1155,18 @@ var QuestionPanel = function QuestionPanel(props) {
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Question failed.')
       if (json.usage) onTokens(json.usage)
-
-      setAnswers(function(prev) {
-        return prev.concat([{
-          id:             Date.now(),
-          question:       q,
-          periodUsed:     json.periodUsed,
-          queries:        json.queries        || [],
-          narrative:      json.narrative,
-          dependentFields: json.dependentFields || [],
-        }])
-      })
+var newId = Date.now()
+setAnswers(function(prev) {
+  return [{
+    id:             Date.now(),
+    question:       q,
+    periodUsed:     json.periodUsed,
+    queries:        json.queries        || [],
+    narrative:      json.narrative,
+    dependentFields: json.dependentFields || [],
+  }].concat(prev)
+})
+      setExpandedAnswerId(newId)
 if (json.queries) {
   onQuestionQueries(
     json.queries
@@ -1179,7 +1180,13 @@ if (json.queries) {
       })
   )
 }
-      
+ if (json.queries) {
+  var qs = json.queries.filter(function(q) { return q.sql }).map(function(q) {
+    return { id: q.id + '_' + Date.now(), title: q.title, sql: q.sql }
+  })
+  console.log('=== onQuestionQueries firing with', qs.length, 'queries')
+  onQuestionQueries(qs)
+}     
       setQuestion('')
     } catch(err) {
       setError(err.message)
@@ -1289,7 +1296,10 @@ if (json.queries) {
             <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(155,127,227,0.5), transparent)' }} />
 
             {/* Question header */}
-            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)' }}>
+              <div
+                onClick={function() { setExpandedAnswerId(isExpanded ? null : ans.id) }}
+                style={{ padding: '14px 20px 12px', borderBottom: isExpanded ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
+              >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <span style={{
                   fontSize: 9, padding: '2px 7px', borderRadius: 3, flexShrink: 0, marginTop: 2,
@@ -1303,9 +1313,15 @@ if (json.queries) {
                 <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', flexShrink: 0, marginTop: 2 }}>
                   {ans.periodUsed}
                 </span>
+                          <span style={{
+            fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0,
+            marginTop: 2, display: 'inline-block',
+            transform: isExpanded ? 'rotate(180deg)' : 'none',
+            transition: 'transform var(--transition)',
+          }}>▾</span>
               </div>
             </div>
-
+            {isExpanded && (<>
             {/* Charts */}
             {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).length > 0 && (
               <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
@@ -1419,6 +1435,7 @@ if (json.queries) {
           </p>
         </div>
       )}
+        </>)}
     </div>
   )
 }
