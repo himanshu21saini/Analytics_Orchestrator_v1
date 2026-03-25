@@ -687,7 +687,22 @@ export default function Dashboard({ session }) {
       )}
 
       {/* ── Query Inspector ───────────────────────────────────────────── */}
-      {prefs.queryInspector !== false && (<QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} questionPanelRef={questionPanelRef} />
+      {prefs.queryInspector !== false && (
+      <QueryInspector
+  queries={allQueries}
+  periodInfo={periodInfo}
+  trendSQLs={trendSQLCache}
+  questionPanelRef={questionPanelRef}
+  datasetId={session.datasetId}
+  metadata={metadata}
+  userContext={session.userContext}
+  onTokens={function(u) {
+    setTokenCalls(function(prev) {
+      return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
+    })
+  }}
+  renderChart={renderChart}
+/>
       )}
 
       {/* ── Coverage Panel ────────────────────────────────────────────── */}
@@ -706,7 +721,7 @@ export default function Dashboard({ session }) {
   )
 }
 
-function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef }) {
+function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, datasetId, metadata, userContext, onTokens, renderChart }) {
 
   var [open, setOpen] = useState(false); var [expandedId, setExpandedId] = useState(null)
   var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
