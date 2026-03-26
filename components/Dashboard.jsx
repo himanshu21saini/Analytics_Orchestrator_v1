@@ -911,7 +911,7 @@ var QuestionPanel = function QuestionPanel(props) {
       if (json.queries) {
         var qs = json.queries
           .filter(function(qItem) { return qItem.sql })
-          .map(function(qItem) { return { id: qItem.id + '_' + newId, title: qItem.title, sql: qItem.sql } })
+          .map(function(qItem, i) { return { id: qItem.id + '_' + newId + '_' + i, title: qItem.title, sql: qItem.sql } })
         if (qs.length) onQuestionQueries(qs)
       }
 
