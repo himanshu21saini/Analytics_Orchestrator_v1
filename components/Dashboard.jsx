@@ -950,7 +950,7 @@ var QuestionPanel = function QuestionPanel(props) {
           value={question}
           onChange={function(e) { setQuestion(e.target.value) }}
           onKeyDown={handleKeyDown}
-          placeholder="e.g. Which branch had the highest BFI score in Feb 2026? Why did Branch_2 decline?"
+          placeholder="Ask any question about your data — e.g. which segment performed best last month, or what is driving the decline in a KPI?"
           rows={2}
           style={{ flex: 1, padding: '10px 14px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', lineHeight: 1.5, resize: 'vertical', outline: 'none', transition: 'border-color var(--transition)' }}
           onFocus={function(e) { e.target.style.borderColor = 'rgba(155,127,227,0.5)' }}
