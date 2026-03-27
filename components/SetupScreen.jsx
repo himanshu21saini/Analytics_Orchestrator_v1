@@ -264,8 +264,16 @@ var [mandatoryFilterValues, setMandatoryFilterValues] = useState({})  // { field
         setPeriodPairs(newPairs); setSelPairIdx(0)
         await loadLists()
       }
-      var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
-      var chosenPair  = activePairs[selPairIdx] || activePairs[0]
+      var activePairs = periodPairs
+if (!activePairs.length) {
+  try {
+    var pairRes  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId + '&type=year_month')
+    var pairJson = await pairRes.json()
+    activePairs  = detectPeriodPairs(pairJson.fields || [])
+  } catch(e) { activePairs = [] }
+}
+if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
+var chosenPair = activePairs[selPairIdx] || activePairs[0]
       setProgress('Composing intelligence queries...')
 
       var mandatoryFilters = mandatoryFilterFields.map(function(f) {
@@ -1102,8 +1110,16 @@ var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null,
         setPeriodPairs(newPairs); setSelPairIdx(0)
         await loadLists()
       }
-      var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
-      var chosenPair  = activePairs[selPairIdx] || activePairs[0]
+      var activePairs = periodPairs
+if (!activePairs.length) {
+  try {
+    var pairRes  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId + '&type=year_month')
+    var pairJson = await pairRes.json()
+    activePairs  = detectPeriodPairs(pairJson.fields || [])
+  } catch(e) { activePairs = [] }
+}
+if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
+var chosenPair = activePairs[selPairIdx] || activePairs[0]
       setProgress('Composing intelligence queries...')
       var mandatoryFilters = mandatoryFilterFields.map(function(f) {
   return {
