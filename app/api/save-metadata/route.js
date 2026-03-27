@@ -95,13 +95,13 @@ export async function POST(request) {
       var r = rows[j]
       var fieldName = getVal(r, 'field_name')
       if (!fieldName) continue
-      await execute(
-        `INSERT INTO metadata_rows (
+      await execute(`INSERT INTO metadata_rows (
           metadata_set_id, field_name, display_name, type, data_type,
           unit, definition, aggregation, calculation_logic, dependencies,
           sample_values, business_priority, filters_applicable, time_grain,
-          benchmark, accumulation_type, is_output, favorable_direction
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          benchmark, accumulation_type, is_output, favorable_direction,
+          mandatory_filter_value
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [
           setId,
           String(fieldName),
@@ -119,10 +119,10 @@ export async function POST(request) {
           inferTimeGrain(r),
           getVal(r, 'benchmark'),
           inferAccumulationType(r),
-          // is_output: default Y if blank/missing
           (function() { var v = getVal(r, 'is_output'); return (v && v.toString().trim().toUpperCase() === 'N') ? 'N' : 'Y' })(),
-          // favorable_direction: i (increase=good) or d (decrease=good)
           (function() { var v = getVal(r, 'favorable_direction'); if (!v) return null; var s = v.toString().trim().toLowerCase(); return (s === 'd') ? 'd' : 'i' })(),
+          getVal(r, 'mandatory_filter_value'),
+        
         ]
       )
       savedCount++
