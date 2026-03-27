@@ -14,7 +14,6 @@ import TrendExplorer from './TrendExplorer'
 import TokenMeter from './TokenMeter'
 import CoveragePanel from './CoveragePanel'
 
-// ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 var PA = ['rgba(0,200,240,0.5)','rgba(43,127,227,0.5)','rgba(0,180,160,0.5)','rgba(123,143,240,0.5)','rgba(240,160,48,0.5)','rgba(155,127,227,0.5)','rgba(16,196,138,0.5)','rgba(224,85,85,0.5)']
 var PC = ['rgba(0,200,240,0.12)','rgba(43,127,227,0.12)','rgba(0,180,160,0.12)','rgba(123,143,240,0.12)']
@@ -29,14 +28,9 @@ function fmt(v) {
 }
 
 var ttStyle = {
-  background: '#0D1930',
-  border: '1px solid rgba(0,200,240,0.2)',
-  borderRadius: 8,
-  fontSize: 11,
-  fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-  color: '#FFFFFF',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-  padding: '8px 12px',
+  background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)', borderRadius: 8,
+  fontSize: 11, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+  color: '#FFFFFF', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', padding: '8px 12px',
 }
 
 var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
@@ -47,64 +41,31 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
       className={'fade-up d' + Math.min(index + 2, 6)}
       style={{
         background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '18px 16px 10px',
-        gridColumn: fullWidth ? '1 / -1' : 'auto',
+        border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+        padding: '18px 16px 10px', gridColumn: fullWidth ? '1 / -1' : 'auto',
         transition: 'border-color var(--transition), box-shadow var(--transition)',
-        position: 'relative', overflow: 'visible',
-        backdropFilter: 'blur(8px)',
+        position: 'relative', overflow: 'visible', backdropFilter: 'blur(8px)',
       }}
-      onMouseEnter={function(e) {
-        e.currentTarget.style.borderColor = 'var(--accent-border)'
-        e.currentTarget.style.boxShadow = '0 0 24px rgba(0,200,240,0.06)'
-      }}
-      onMouseLeave={function(e) {
-        e.currentTarget.style.borderColor = 'var(--border)'
-        e.currentTarget.style.boxShadow = 'none'
-      }}
+      onMouseEnter={function(e) { e.currentTarget.style.borderColor = 'var(--accent-border)'; e.currentTarget.style.boxShadow = '0 0 24px rgba(0,200,240,0.06)' }}
+      onMouseLeave={function(e) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none' }}
     >
-      {/* Top teal accent */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
-      {/* Corner brackets */}
       <div style={{ position: 'absolute', top: 6, right: 8, width: 10, height: 10, borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', borderRadius: '0 3px 0 0', opacity: 0.5 }} />
       <div style={{ position: 'absolute', bottom: 6, left: 8, width: 10, height: 10, borderBottom: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', borderRadius: '0 0 0 3px', opacity: 0.3 }} />
-
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 14 }}>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)' }}>
-            {title}
-          </p>
-          {insight && (
-            <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.4 }}>
-              {insight}
-            </p>
-          )}
+          <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)' }}>{title}</p>
+          {insight && <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.4 }}>{insight}</p>}
         </div>
-        {badge && (
-          <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, fontWeight: 500, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>
-            {badge}
-          </span>
-        )}
+        {badge && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, fontWeight: 500, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>{badge}</span>}
         {onSimulate && (
-          <button
-            onClick={onSimulate}
-            style={{
-              fontSize: 9, padding: '2px 8px', borderRadius: 3, fontWeight: 500,
-              background: 'rgba(155,127,227,0.1)', color: '#9B7FE3',
-              border: '1px solid rgba(155,127,227,0.3)',
-              whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)',
-              cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0,
-            }}
+          <button onClick={onSimulate} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, fontWeight: 500, background: 'rgba(155,127,227,0.1)', color: '#9B7FE3', border: '1px solid rgba(155,127,227,0.3)', whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0 }}
             onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.2)' }}
             onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.1)' }}
-          >
-            ⟳ Simulate
-          </button>
+          >⟳ Simulate</button>
         )}
       </div>
       {children}
-
     </div>
   )
 }
@@ -112,18 +73,13 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
 export default function Dashboard({ session }) {
   var questionPanelRef = useRef(null)
 
-  var [summaryState, setSummaryState] = useState('idle')
-  var [narrative,    setNarrative]    = useState(null)
-  var [summaryError, setSummaryError] = useState('')
-
+  var [summaryState,   setSummaryState]   = useState('idle')
+  var [narrative,      setNarrative]      = useState(null)
+  var [summaryError,   setSummaryError]   = useState('')
   var [decisionState,  setDecisionState]  = useState('idle')
   var [decisionResult, setDecisionResult] = useState(null)
   var [decisionError,  setDecisionError]  = useState('')
-
-  var [whatifQuery, setWhatifQuery] = useState(null)
-
-  // ── FIX 1: questionSQLCache for Query Inspector ──────────────────────────
-  var [questionSQLCache, setQuestionSQLCache] = useState([])
+  var [whatifQuery,    setWhatifQuery]    = useState(null)
 
   var [tokenCalls, setTokenCalls] = useState(function() {
     if (session.initialUsage) {
@@ -132,29 +88,23 @@ export default function Dashboard({ session }) {
     return []
   })
 
-  var [trendDataCache, setTrendDataCache] = useState({})
-  var [trendSQLCache,  setTrendSQLCache]  = useState({})
+  var [trendDataCache,   setTrendDataCache]   = useState({})
+  var [trendSQLCache,    setTrendSQLCache]    = useState({})
+  var [questionSQLCache, setQuestionSQLCache] = useState([])
 
   function handleTrendData(fieldName, data, meta, sql) {
-    setTrendDataCache(function(prev) {
-      var next = Object.assign({}, prev)
-      next[fieldName] = { data: data, meta: meta }
-      return next
-    })
+    setTrendDataCache(function(prev) { var next = Object.assign({}, prev); next[fieldName] = { data: data, meta: meta }; return next })
     if (sql) {
-      setTrendSQLCache(function(prev) {
-        var next = Object.assign({}, prev)
-        next[fieldName] = { sql: sql, title: (meta && meta.display_name) || fieldName }
-        return next
-      })
+      setTrendSQLCache(function(prev) { var next = Object.assign({}, prev); next[fieldName] = { sql: sql, title: (meta && meta.display_name) || fieldName }; return next })
     }
   }
 
-  var queryResults = session.queryResults || []
-  var metadata     = session.metadata     || []
-  var periodInfo   = session.periodInfo   || {}
-  var allQueries   = session.queries      || []
-  var prefs        = session.preferences  || {}
+  var queryResults     = session.queryResults     || []
+  var metadata         = session.metadata         || []
+  var periodInfo       = session.periodInfo       || {}
+  var allQueries       = session.queries          || []
+  var prefs            = session.preferences      || {}
+  var mandatoryFilters = session.mandatoryFilters  || []   // ── NEW
 
   var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
   var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
@@ -163,58 +113,21 @@ export default function Dashboard({ session }) {
   var failed       = queryResults.filter(function(r) { return !!r.error })
 
   function buildEnrichedQueryResults() {
-    var existingKpiFields = new Set(
-      queryResults
-        .filter(function(r) { return r.chart_type === 'kpi' })
-        .map(function(r) { return r.id })
-    )
-
-    var syntheticResults = []
-
+    var existingKpiFields = new Set(queryResults.filter(function(r) { return r.chart_type === 'kpi' }).map(function(r) { return r.id }))
+    var syntheticResults  = []
     Object.keys(trendDataCache).forEach(function(field) {
-      var entry    = trendDataCache[field]
-      var meta     = entry.meta || {}
-      var data     = entry.data || []
+      var entry = trendDataCache[field]; var meta = entry.meta || {}; var data = entry.data || []
       if (!data.length) return
-
-      var sorted = data.slice().sort(function(a, b) {
-        return String(a.period || '').localeCompare(String(b.period || ''))
-      })
-
+      var sorted    = data.slice().sort(function(a, b) { return String(a.period || '').localeCompare(String(b.period || '')) })
       var latest    = sorted[sorted.length - 1]
       var latestVal = parseFloat((latest && latest.value) || 0)
-
       var yearAgoIdx = sorted.length >= 13 ? sorted.length - 13 : 0
-      var yearAgo    = sorted[yearAgoIdx]
-      var yearAgoVal = parseFloat((yearAgo && yearAgo.value) || 0)
-
+      var yearAgoVal = parseFloat((sorted[yearAgoIdx] && sorted[yearAgoIdx].value) || 0)
       if (!existingKpiFields.has(field)) {
-        syntheticResults.push({
-          id:             'trend_kpi_' + field,
-          title:          meta.display_name || field,
-          chart_type:     'kpi',
-          current_key:    'current_value',
-          comparison_key: 'comparison_value',
-          value_key:      'current_value',
-          unit:           meta.unit || '',
-          data:           [{ current_value: latestVal, comparison_value: yearAgoVal }],
-          error:          null,
-          _from_trend:    true,
-        })
+        syntheticResults.push({ id: 'trend_kpi_' + field, title: meta.display_name || field, chart_type: 'kpi', current_key: 'current_value', comparison_key: 'comparison_value', value_key: 'current_value', unit: meta.unit || '', data: [{ current_value: latestVal, comparison_value: yearAgoVal }], error: null, _from_trend: true })
       }
-
-      syntheticResults.push({
-        id:         'trend_series_' + field,
-        title:      (meta.display_name || field) + ' monthly trend',
-        chart_type: 'area',
-        label_key:  'period',
-        value_key:  'value',
-        unit:       meta.unit || '',
-        data:       sorted.slice(-24),
-        error:      null,
-      })
+      syntheticResults.push({ id: 'trend_series_' + field, title: (meta.display_name || field) + ' monthly trend', chart_type: 'area', label_key: 'period', value_key: 'value', unit: meta.unit || '', data: sorted.slice(-24), error: null })
     })
-
     return queryResults.concat(syntheticResults)
   }
 
@@ -224,13 +137,11 @@ export default function Dashboard({ session }) {
     setSummaryState('loading'); setNarrative(null); setSummaryError('')
     try {
       var enriched = buildEnrichedQueryResults()
-      var res = await fetch('/api/generate-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
+      var res  = await fetch('/api/generate-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setNarrative(json.result.narrative); setSummaryState('done')
-      if (json.usage) {
-        setTokenCalls(function(prev) { return prev.concat([{ label: 'summary', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o-mini' }]) })
-      }
+      if (json.usage) setTokenCalls(function(prev) { return prev.concat([{ label: 'summary', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o-mini' }]) })
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
   }
 
@@ -239,10 +150,7 @@ export default function Dashboard({ session }) {
   function handleScrollToQuestion() {
     if (questionPanelRef.current) {
       questionPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setTimeout(function() {
-        var input = questionPanelRef.current && questionPanelRef.current.querySelector('textarea')
-        if (input) input.focus()
-      }, 500)
+      setTimeout(function() { var input = questionPanelRef.current && questionPanelRef.current.querySelector('textarea'); if (input) input.focus() }, 500)
     }
   }
 
@@ -250,20 +158,15 @@ export default function Dashboard({ session }) {
     setDecisionState('loading'); setDecisionResult(null); setDecisionError('')
     try {
       var enriched = buildEnrichedQueryResults()
-      var res = await fetch('/api/generate-decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
+      var res  = await fetch('/api/generate-decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queryResults: enriched, metadata, periodInfo }) })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setDecisionResult(json.result); setDecisionState('done')
-      if (json.usage) {
-        setTokenCalls(function(prev) { return prev.concat([{ label: 'decisions', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o' }]) })
-      }
+      if (json.usage) setTokenCalls(function(prev) { return prev.concat([{ label: 'decisions', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o' }]) })
     } catch (err) { setDecisionError(err.message); setDecisionState('error') }
   }
 
-  function getInsight(resultId) {
-    var q = allQueries.find(function(q) { return q.id === resultId })
-    return q ? q.insight : null
-  }
+  function getInsight(resultId) { var q = allQueries.find(function(q) { return q.id === resultId }); return q ? q.insight : null }
 
   function renderChart(result, idx) {
     var labelKey = result.label_key    || 'label'
@@ -279,15 +182,8 @@ export default function Dashboard({ session }) {
     var insight  = getInsight(result.id)
     var ct       = result.chart_type
 
-    var fullQuery = allQueries.find(function(q) { return q.id === result.id }) || result
-    var simulateQuery = Object.assign({}, fullQuery, {
-      label_key:      result.label_key,
-      value_key:      result.value_key,
-      current_key:    result.current_key,
-      comparison_key: result.comparison_key,
-      unit:           result.unit,
-      chart_type:     result.chart_type,
-    })
+    var fullQuery     = allQueries.find(function(q) { return q.id === result.id }) || result
+    var simulateQuery = Object.assign({}, fullQuery, { label_key: result.label_key, value_key: result.value_key, current_key: result.current_key, comparison_key: result.comparison_key, unit: result.unit, chart_type: result.chart_type })
     function onSimulate() { setWhatifQuery(simulateQuery) }
 
     if (ct === 'bar') {
@@ -341,40 +237,18 @@ export default function Dashboard({ session }) {
 
     if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 55 : 0
-      var pieLabelKey = labelKey
-      var pieValueKey = valueKey
+      var pieLabelKey = labelKey; var pieValueKey = valueKey
       if (data.length > 0) {
-        var firstRow = data[0]
-        var keys = Object.keys(firstRow)
-        if (!firstRow[pieLabelKey]) {
-          pieLabelKey = keys.find(function(k) {
-            var v = firstRow[k]
-            return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v))
-          }) || keys[0]
-        }
-        if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) {
-          pieValueKey = keys.find(function(k) {
-            return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k]))
-          }) || keys[1]
-        }
+        var firstRow = data[0]; var keys = Object.keys(firstRow)
+        if (!firstRow[pieLabelKey]) { pieLabelKey = keys.find(function(k) { var v = firstRow[k]; return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v)) }) || keys[0] }
+        if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) { pieValueKey = keys.find(function(k) { return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k])) }) || keys[1] }
       }
-      var pieData = data
-        .map(function(r) {
-          var row = Object.assign({}, r)
-          row[pieValueKey] = parseFloat(row[pieValueKey]) || 0
-          return row
-        })
-        .filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
+      var pieData = data.map(function(r) { var row = Object.assign({}, r); row[pieValueKey] = parseFloat(row[pieValueKey]) || 0; return row }).filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={280}>
             <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-              <Pie data={pieData} cx="50%" cy="45%" innerRadius={innerR} outerRadius={100}
-                dataKey={pieValueKey} nameKey={pieLabelKey}
-                paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}
-                label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }}
-                labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}
-              >
+              <Pie data={pieData} cx="50%" cy="45%" innerRadius={innerR} outerRadius={100} dataKey={pieValueKey} nameKey={pieLabelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0} label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }} labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}>
                 {pieData.map(function(entry, i) { return <Cell key={i} fill={PA[i % PA.length]} stroke={P[i % P.length]} strokeWidth={0.5} /> })}
               </Pie>
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
@@ -398,13 +272,7 @@ export default function Dashboard({ session }) {
               <Tooltip contentStyle={ttStyle} content={function(props) {
                 if (!props.active || !props.payload || !props.payload.length) return null
                 var d = props.payload[0] && props.payload[0].payload; if (!d) return null
-                return (
-                  <div style={ttStyle}>
-                    <p style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-accent)' }}>{d[labelKey] || d.label || ''}</p>
-                    <p style={{ fontSize: 11, color: '#8BB4D8' }}>{xKey}: {fmt(d[xKey])}</p>
-                    <p style={{ fontSize: 11, color: '#8BB4D8' }}>{yKey}: {fmt(d[yKey])}</p>
-                  </div>
-                )
+                return (<div style={ttStyle}><p style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-accent)' }}>{d[labelKey] || d.label || ''}</p><p style={{ fontSize: 11, color: '#8BB4D8' }}>{xKey}: {fmt(d[xKey])}</p><p style={{ fontSize: 11, color: '#8BB4D8' }}>{yKey}: {fmt(d[yKey])}</p></div>)
               }} />
               <Scatter data={data} fill={color} opacity={0.85}>
                 <LabelList dataKey={labelKey} position="top" style={{ fontSize: 8, fill: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }} />
@@ -414,20 +282,36 @@ export default function Dashboard({ session }) {
         </ChartCard>
       )
     }
+
+    if (ct === 'line' || ct === 'area') {
+      var ChartComponent = ct === 'area' ? AreaChart : LineChart
+      var DataComponent  = ct === 'area' ? Area : Line
+      return (
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+          <ResponsiveContainer width="100%" height={260}>
+            <ChartComponent data={data} margin={{ top: 10, right: 16, left: 0, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
+              <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
+              <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
+              <DataComponent type="monotone" dataKey={valueKey} stroke={color} strokeWidth={1.5} fill={ct === 'area' ? colorA : undefined} dot={false} activeDot={{ r: 4, fill: color }} />
+            </ChartComponent>
+          </ResponsiveContainer>
+        </ChartCard>
+      )
+    }
+
     return null
   }
 
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
 
-      {/* ── Period Banner ── */}
       {periodInfo.viewLabel && (
         <div className="fade-in" style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ flex: 1 }}>
-              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                {periodInfo.viewLabel}
-              </h2>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>{periodInfo.viewLabel}</h2>
               <p style={{ fontSize: 12, color: 'var(--text-accent)', marginTop: 4, fontFamily: 'var(--font-body)', letterSpacing: '0.06em' }}>
                 {periodInfo.cmpLabel}
                 <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
@@ -437,45 +321,59 @@ export default function Dashboard({ session }) {
                 <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
                 {chartResults.length} charts
                 {session.userContext && session.userContext.filters && session.userContext.filters.map(function(f, i) {
-                  return (
-                    <span key={i} style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>
-                      {f.display || (f.field + ' ' + f.operator + ' ' + f.value)}
-                    </span>
-                  )
+                  return <span key={i} style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{f.display || (f.field + ' ' + f.operator + ' ' + f.value)}</span>
                 })}
                 {session.userContext && session.userContext.kpi_focus && session.userContext.kpi_focus.length > 0 && (
                   <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>
                     Focus: {session.userContext.kpi_focus.slice(0,2).join(', ')}{session.userContext.kpi_focus.length > 2 ? ' +' + (session.userContext.kpi_focus.length - 2) : ''}
                   </span>
                 )}
+                {/* ── Mandatory filter chips ── */}
+                {mandatoryFilters && mandatoryFilters.map(function(f, i) {
+                  return (
+                    <span key={'mf_' + i} style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(240,160,48,0.1)', border: '1px solid rgba(240,160,48,0.3)', color: '#F0A030', fontFamily: 'var(--font-mono)' }}>
+                      {f.display_name || f.field}: {f.value}
+                    </span>
+                  )
+                })}
               </p>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-
               {prefs.summary !== false && (
                 <button onClick={handleGenerateSummary} disabled={summaryState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)' }}>
                   {summaryState === 'loading' ? <><span className="spinner" /> Composing...</> : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>}
                 </button>
               )}
-
               {prefs.decisions !== false && (
                 <button onClick={handleGenerateDecisions} disabled={decisionState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)', border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0', cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)' }}>
                   {decisionState === 'loading' ? <><span className="spinner" /> Analysing...</> : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>}
                 </button>
               )}
-
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }} onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="11" cy="7" r="0.6" fill="currentColor"/></svg>
+              <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }}
+                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }}
+                onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
+                </svg>
               </button>
-
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }} onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/><path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="6" cy="9" r="0.6" fill="currentColor"/></svg>
+              <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
+                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
+                onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
+                </svg>
                 Ask
               </button>
-
             </div>
           </div>
 
@@ -487,40 +385,29 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {prefs.decisions !== false && decisionState !== 'idle' && (
-        <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />
-      )}
-
-      {prefs.summary !== false && summaryState !== 'idle' && (
-        <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />
-      )}
+      {prefs.decisions !== false && decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
+      {prefs.summary !== false && summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
 
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
       {visibleKpis.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
           {visibleKpis.map(function(r, i) {
-            var row    = r.data[0] || {}
-            var curKey = r.current_key  || r.value_key || 'current_value'
-            var cmpKey = r.comparison_key || 'comparison_value'
-            var meta   = metadata.find(function(m) { return m.field_name === r.id || (r.title || '').toLowerCase().includes((m.display_name || '').toLowerCase()) })
+            var row = r.data[0] || {}; var curKey = r.current_key || r.value_key || 'current_value'; var cmpKey = r.comparison_key || 'comparison_value'
+            var meta = metadata.find(function(m) { return m.field_name === r.id || (r.title || '').toLowerCase().includes((m.display_name || '').toLowerCase()) })
             var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
             return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
           })}
         </div>
       )}
 
-      {(trendResults.length > 0 || chartResults.length > 0) && (
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />
-      )}
+      {(trendResults.length > 0 || chartResults.length > 0) && <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />}
 
       {prefs.forecast !== false && (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
         <TrendExplorer metadata={metadata} datasetId={session.datasetId} timePeriod={session.timePeriod} onSimulate={function(q) { setWhatifQuery(q) }} onTrendData={handleTrendData} />
       )}
 
-      {drillResults.map(function(result, idx) {
-        return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} />
-      })}
+      {drillResults.map(function(result, idx) { return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} /> })}
 
       {chartResults.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -530,35 +417,23 @@ export default function Dashboard({ session }) {
 
       {failed.length > 0 && (
         <div style={{ background: 'var(--amber-light)', border: '1px solid rgba(240,160,48,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16 }}>
-          <p style={{ fontSize: 12, color: 'var(--amber-text)', marginBottom: 4, fontFamily: 'var(--font-body)' }}>
-            {failed.length} {failed.length === 1 ? 'query' : 'queries'} could not execute
-          </p>
+          <p style={{ fontSize: 12, color: 'var(--amber-text)', marginBottom: 4, fontFamily: 'var(--font-body)' }}>{failed.length} {failed.length === 1 ? 'query' : 'queries'} could not execute</p>
           {failed.map(function(r) { return <p key={r.id} style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.title}: {r.error}</p> })}
         </div>
       )}
 
-      {/* ── Query Inspector ── */}
       {prefs.queryInspector !== false && (
         <QueryInspector
-          queries={allQueries}
-          periodInfo={periodInfo}
-          trendSQLs={trendSQLCache}
-          questionPanelRef={questionPanelRef}
-          datasetId={session.datasetId}
-          metadata={metadata}
-          userContext={session.userContext}
-          onTokens={function(u) {
-            setTokenCalls(function(prev) {
-              return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
-            })
-          }}
+          queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache}
+          questionPanelRef={questionPanelRef} datasetId={session.datasetId}
+          metadata={metadata} userContext={session.userContext}
+          onTokens={function(u) { setTokenCalls(function(prev) { return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }]) }) }}
           renderChart={renderChart}
           questionSQLs={questionSQLCache}
-          onQuestionQueries={function(qs) {
-            setQuestionSQLCache(function(prev) { return prev.concat(qs) })
-          }}
+          onQuestionQueries={function(qs) { setQuestionSQLCache(function(prev) { return prev.concat(qs) }) }}
         />
       )}
+
       {/* ── Question Panel ── */}
       <QuestionPanel
         panelRef={questionPanelRef}
@@ -566,19 +441,13 @@ export default function Dashboard({ session }) {
         metadata={metadata}
         periodInfo={periodInfo}
         userContext={session.userContext}
-        onTokens={function(u) {
-          setTokenCalls(function(prev) {
-            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
-          })
-        }}
+        mandatoryFilters={mandatoryFilters}
+        onTokens={function(u) { setTokenCalls(function(prev) { return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }]) }) }}
         renderChart={renderChart}
-        onQuestionQueries={function(qs) {
-          setQuestionSQLCache(function(prev) { return prev.concat(qs) })
-        }}
+        onQuestionQueries={function(qs) { setQuestionSQLCache(function(prev) { return prev.concat(qs) }) }}
       />
-      {prefs.coveragePanel !== false && (
-        <CoveragePanel coverageData={session.coverageData} />
-      )}
+
+      {prefs.coveragePanel !== false && <CoveragePanel coverageData={session.coverageData} />}
 
       <WhatIfDrawer query={whatifQuery || {}} metadata={metadata} isOpen={!!whatifQuery} onClose={function() { setWhatifQuery(null) }} />
     </div>
@@ -586,17 +455,18 @@ export default function Dashboard({ session }) {
 }
 
 // ── QueryInspector ────────────────────────────────────────────────────────────
+
 function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, datasetId, metadata, userContext, onTokens, renderChart, questionSQLs, onQuestionQueries }) {
   var [open, setOpen] = useState(false)
   var [expandedId, setExpandedId] = useState(null)
   var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
   var total = (queries ? queries.length : 0) + trendEntries.length + (questionSQLs ? questionSQLs.length : 0)
   if (!total) return null
+  var typeColor = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030', trend: '#F0A030' }
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16, background: 'var(--surface)', backdropFilter: 'blur(8px)' }}>
-      <button onClick={function() { setOpen(function(v) { return !v }) }}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer' }}>
+      <button onClick={function() { setOpen(function(v) { return !v }) }} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'none', border: 'none', cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Query Inspector</span>
           <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 2, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', fontFamily: 'var(--font-mono)' }}>{total}</span>
@@ -611,15 +481,11 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
               {periodInfo.viewLabel} · {periodInfo.cmpLabel}
             </div>
           )}
-
-          {/* Main queries */}
           {(queries || []).map(function(q, idx) {
-            var isExpanded = expandedId === q.id
-            var tc = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030' }[q.chart_type] || '#8BB4D8'
+            var isExpanded = expandedId === q.id; var tc = typeColor[q.chart_type] || '#8BB4D8'
             return (
               <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+                <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
                   <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: tc, border: '1px solid ' + tc + '40', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>{q.chart_type}</span>
                   <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{idx + 1}. {q.title}</span>
                   {q.unit && <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{q.unit}</span>}
@@ -643,18 +509,14 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
             )
           })}
 
-          {/* Trend Explorer queries */}
           {trendEntries.length > 0 && (
             <>
-              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
-                Trend Explorer queries
-              </div>
+              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>Trend Explorer queries</div>
               {trendEntries.map(function(q) {
                 var isExpanded = expandedId === q.id
                 return (
                   <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
                       <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#F0A030', border: '1px solid rgba(240,160,48,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>trend</span>
                       <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
                       <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
@@ -673,18 +535,14 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
             </>
           )}
 
-          {/* ── FIX 1: Ask a Question queries ── */}
           {questionSQLs && questionSQLs.length > 0 && (
             <>
-              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
-                Ask a Question queries
-              </div>
+              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>Ask a Question queries</div>
               {questionSQLs.map(function(q) {
                 var isExpanded = expandedId === q.id
                 return (
                   <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
                       <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>ask</span>
                       <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
                       <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
@@ -702,8 +560,6 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
               })}
             </>
           )}
-
-
         </div>
       )}
     </div>
@@ -721,81 +577,50 @@ function CopyButton({ text }) {
 }
 
 // ── DrillDownChart ────────────────────────────────────────────────────────────
+
 function DrillDownChart({ result, idx, periodInfo }) {
   var [selected, setSelected] = useState(null)
-
-  var raw         = result.data || []
-  var labelKey    = result.label_key    || 'label'
-  var slotKey     = result.slot_key     || 'slot'
-  var slotSortKey = result.slot_sort_key || slotKey
-  var valueKey    = result.current_key  || 'current_value'
-  var entityDisp  = result.entity_display || 'Branch'
-  var slotDisp    = result.slot_display   || 'Time Slot'
-  var metricDisp  = result.metric_display || 'Score'
+  var raw = result.data || []; var labelKey = result.label_key || 'label'; var slotKey = result.slot_key || 'slot'
+  var slotSortKey = result.slot_sort_key || slotKey; var valueKey = result.current_key || 'current_value'
+  var entityDisp = result.entity_display || 'Branch'; var slotDisp = result.slot_display || 'Time Slot'; var metricDisp = result.metric_display || 'Score'
 
   var branchMap = {}
   raw.forEach(function(row) {
-    var branch = row[labelKey]
-    if (!branch) return
+    var branch = row[labelKey]; if (!branch) return
     if (!branchMap[branch]) branchMap[branch] = { label: branch, total: 0, count: 0 }
-    branchMap[branch].total += parseFloat(row[valueKey]) || 0
-    branchMap[branch].count += 1
+    branchMap[branch].total += parseFloat(row[valueKey]) || 0; branchMap[branch].count += 1
   })
-  var branches = Object.values(branchMap)
-    .map(function(b) { return { label: b.label, avg: b.count ? b.total / b.count : 0 } })
-    .sort(function(a, b) { return b.avg - a.avg })
+  var branches = Object.values(branchMap).map(function(b) { return { label: b.label, avg: b.count ? b.total / b.count : 0 } }).sort(function(a, b) { return b.avg - a.avg })
 
   var slotRows = []
   if (selected) {
-    slotRows = raw
-      .filter(function(r) { return r[labelKey] === selected })
+    slotRows = raw.filter(function(r) { return r[labelKey] === selected })
       .map(function(r) { return { slot: r[slotKey], sort: r[slotSortKey], value: parseFloat(r[valueKey]) || 0 } })
-      .sort(function(a, b) {
-        var na = parseInt(a.sort); var nb = parseInt(b.sort)
-        if (!isNaN(na) && !isNaN(nb)) return na - nb
-        return String(a.slot).localeCompare(String(b.slot))
-      })
+      .sort(function(a, b) { var na = parseInt(a.sort); var nb = parseInt(b.sort); if (!isNaN(na) && !isNaN(nb)) return na - nb; return String(a.slot).localeCompare(String(b.slot)) })
   }
 
-  function scoreColor(v) {
-    if (v >= 14) return '#E05555'
-    if (v >= 12) return '#F0A030'
-    if (v >= 10) return '#00C8F0'
-    return '#3D6080'
-  }
-
+  function scoreColor(v) { if (v >= 14) return '#E05555'; if (v >= 12) return '#F0A030'; if (v >= 10) return '#00C8F0'; return '#3D6080' }
   var maxAvg = branches.length ? branches[0].avg : 1
-  var ttStyleLocal = { background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)', borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }
-  var axStyleLocal = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
-  function fmtLocal(v) { var n = parseFloat(v); if (isNaN(n)) return '—'; return n.toFixed(1) }
+  var ddTtStyle = { background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)', borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }
+  var ddAxStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
+  function fmtDD(v) { var n = parseFloat(v); if (isNaN(n)) return '—'; return n.toFixed(1) }
 
   return (
     <div className={'fade-up d' + Math.min(idx + 2, 6)} style={{ background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 12, overflow: 'hidden', transition: 'border-color var(--transition)' }}>
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
-
       <div style={{ padding: '14px 18px 10px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)', marginBottom: 2 }}>{result.title}</p>
-          <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', fontFamily: 'var(--font-body)' }}>
-            {selected ? entityDisp + ' selected: ' + selected + ' — showing ' + slotDisp.toLowerCase() + ' breakdown' : 'Click any ' + entityDisp.toLowerCase() + ' to drill into its ' + slotDisp.toLowerCase() + ' pattern'}
-          </p>
+          <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', fontFamily: 'var(--font-body)' }}>{selected ? entityDisp + ' selected: ' + selected + ' — showing ' + slotDisp.toLowerCase() + ' breakdown' : 'Click any ' + entityDisp.toLowerCase() + ' to drill into its ' + slotDisp.toLowerCase() + ' pattern'}</p>
         </div>
-        {selected && (
-          <button onClick={function() { setSelected(null) }} style={{ fontSize: 10, padding: '4px 10px', cursor: 'pointer', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', flexShrink: 0 }}>
-            ← All {entityDisp}s
-          </button>
-        )}
+        {selected && <button onClick={function() { setSelected(null) }} style={{ fontSize: 10, padding: '4px 10px', cursor: 'pointer', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', flexShrink: 0 }}>← All {entityDisp}s</button>}
       </div>
-
       <div style={{ padding: '0 18px 14px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {branches.map(function(b) {
-            var isSelected = selected === b.label
-            var barPct = maxAvg > 0 ? (b.avg / maxAvg) * 100 : 0
-            var color  = scoreColor(b.avg)
+            var isSelected = selected === b.label; var barPct = maxAvg > 0 ? (b.avg / maxAvg) * 100 : 0; var color = scoreColor(b.avg)
             return (
-              <div key={b.label} onClick={function() { setSelected(isSelected ? null : b.label) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: isSelected ? 'rgba(0,200,240,0.06)' : 'transparent', border: '1px solid ' + (isSelected ? 'var(--accent-border)' : 'transparent'), transition: 'all var(--transition)' }}
+              <div key={b.label} onClick={function() { setSelected(isSelected ? null : b.label) }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: isSelected ? 'rgba(0,200,240,0.06)' : 'transparent', border: '1px solid ' + (isSelected ? 'var(--accent-border)' : 'transparent'), transition: 'all var(--transition)' }}
                 onMouseEnter={function(e) { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
                 onMouseLeave={function(e) { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
               >
@@ -803,30 +628,24 @@ function DrillDownChart({ result, idx, periodInfo }) {
                 <div style={{ flex: 1, height: 8, background: 'var(--surface-3)', borderRadius: 4, overflow: 'hidden' }}>
                   <div style={{ width: barPct + '%', height: '100%', background: color, borderRadius: 4, opacity: selected && !isSelected ? 0.35 : 0.85, transition: 'width 0.4s ease, opacity var(--transition)' }} />
                 </div>
-                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: color, width: 36, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>{fmtLocal(b.avg)}</span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: color, width: 36, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>{fmtDD(b.avg)}</span>
                 <span style={{ fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-tertiary)', flexShrink: 0 }}>{isSelected ? '▾' : '▸'}</span>
               </div>
             )
           })}
         </div>
       </div>
-
       {selected && slotRows.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border)', padding: '14px 18px 16px', background: 'rgba(0,200,240,0.02)' }}>
-          <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-accent)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>
-            {selected} — {metricDisp} by {slotDisp}
-          </p>
+          <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-accent)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>{selected} — {metricDisp} by {slotDisp}</p>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={slotRows} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis dataKey="slot" tick={axStyleLocal} angle={-40} textAnchor="end" interval={Math.max(0, Math.floor(slotRows.length / 8) - 1)} axisLine={false} tickLine={false} />
-              <YAxis tick={axStyleLocal} width={40} tickFormatter={fmtLocal} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={ttStyleLocal} formatter={function(v) { return [fmtLocal(v), metricDisp] }} labelFormatter={function(l) { return slotDisp + ': ' + l }} />
+              <XAxis dataKey="slot" tick={ddAxStyle} angle={-40} textAnchor="end" interval={Math.max(0, Math.floor(slotRows.length / 8) - 1)} axisLine={false} tickLine={false} />
+              <YAxis tick={ddAxStyle} width={40} tickFormatter={fmtDD} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={ddTtStyle} formatter={function(v) { return [fmtDD(v), metricDisp] }} labelFormatter={function(l) { return slotDisp + ': ' + l }} />
               <Line type="monotone" dataKey="value" name={metricDisp} stroke="var(--accent)" strokeWidth={1.5}
-                dot={function(props) {
-                  var cx = props.cx; var cy = props.cy; var val = props.payload.value
-                  return <circle key={props.key || cx + '-' + cy} cx={cx} cy={cy} r={3} fill={scoreColor(val)} stroke="none" />
-                }}
+                dot={function(props) { var cx = props.cx; var cy = props.cy; var val = props.payload.value; return <circle key={props.key || cx + '-' + cy} cx={cx} cy={cy} r={3} fill={scoreColor(val)} stroke="none" /> }}
                 activeDot={{ r: 5, fill: 'var(--accent)' }}
               />
             </LineChart>
@@ -838,9 +657,9 @@ function DrillDownChart({ result, idx, periodInfo }) {
               var peak = slotRows.reduce(function(a,b){return b.value>a.value?b:a}, slotRows[0])
               var low  = slotRows.reduce(function(a,b){return b.value<a.value?b:a}, slotRows[0])
               return [
-                { label: 'Avg', val: fmtLocal(avg), color: 'var(--text-secondary)' },
-                { label: 'Peak slot', val: peak ? peak.slot + ' (' + fmtLocal(peak.value) + ')' : '—', color: '#E05555' },
-                { label: 'Lowest slot', val: low ? low.slot + ' (' + fmtLocal(low.value) + ')' : '—', color: '#10C48A' },
+                { label: 'Avg', val: fmtDD(avg), color: 'var(--text-secondary)' },
+                { label: 'Peak slot', val: peak ? peak.slot + ' (' + fmtDD(peak.value) + ')' : '—', color: '#E05555' },
+                { label: 'Lowest slot', val: low ? low.slot + ' (' + fmtDD(low.value) + ')' : '—', color: '#10C48A' },
               ].map(function(s) {
                 return (
                   <div key={s.label} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -858,22 +677,23 @@ function DrillDownChart({ result, idx, periodInfo }) {
 }
 
 // ── QuestionPanel ─────────────────────────────────────────────────────────────
+
 var QuestionPanel = function QuestionPanel(props) {
   var ref               = props.panelRef
   var datasetId         = props.datasetId
   var metadata          = props.metadata          || []
   var periodInfo        = props.periodInfo        || {}
   var userContext       = props.userContext        || null
+  var mandatoryFilters  = props.mandatoryFilters   || []   // ── NEW
   var onTokens          = props.onTokens          || function() {}
   var renderChart       = props.renderChart       || function() { return null }
   var onQuestionQueries = props.onQuestionQueries || function() {}
 
-  var [question,          setQuestion]          = useState('')
-  var [loading,           setLoading]           = useState(false)
-  var [error,             setError]             = useState('')
-  var [answers,           setAnswers]           = useState([])
-  // ── FIX 3: which answer block is expanded ────────────────────────────────
-  var [expandedAnswerId,  setExpandedAnswerId]  = useState(null)
+  var [question,         setQuestion]         = useState('')
+  var [loading,          setLoading]          = useState(false)
+  var [error,            setError]            = useState('')
+  var [answers,          setAnswers]          = useState([])
+  var [expandedAnswerId, setExpandedAnswerId] = useState(null)
 
   async function handleAsk() {
     var q = question.trim()
@@ -882,9 +702,15 @@ var QuestionPanel = function QuestionPanel(props) {
 
     try {
       var res = await fetch('/api/ask-question', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ question: q, datasetId: datasetId, metadata: metadata, periodInfo: periodInfo, userContext: userContext }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question:        q,
+          datasetId:       datasetId,
+          metadata:        metadata,
+          periodInfo:      periodInfo,
+          userContext:     userContext,
+          mandatoryFilters: mandatoryFilters,   // ── NEW
+        }),
       })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Question failed.')
@@ -892,22 +718,15 @@ var QuestionPanel = function QuestionPanel(props) {
 
       var newId = Date.now()
 
-      // ── FIX 2: prepend — newest question on top ──────────────────────────
       setAnswers(function(prev) {
         return [{
-          id:              newId,
-          question:        q,
-          periodUsed:      json.periodUsed,
-          queries:         json.queries        || [],
-          narrative:       json.narrative,
-          dependentFields: json.dependentFields || [],
+          id: newId, question: q, periodUsed: json.periodUsed,
+          queries: json.queries || [], narrative: json.narrative, dependentFields: json.dependentFields || [],
         }].concat(prev)
       })
 
-      // ── FIX 3: auto-expand newest, collapse others ───────────────────────
       setExpandedAnswerId(newId)
 
-      // ── FIX 1: send SQLs up to Query Inspector ───────────────────────────
       if (json.queries) {
         var qs = json.queries
           .filter(function(qItem) { return qItem.sql })
@@ -916,20 +735,15 @@ var QuestionPanel = function QuestionPanel(props) {
       }
 
       setQuestion('')
-    } catch(err) {
-      setError(err.message)
-    }
+    } catch(err) { setError(err.message) }
     setLoading(false)
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAsk()
-  }
+  function handleKeyDown(e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAsk() }
 
   return (
     <div ref={ref} style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
 
-      {/* Section header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, rgba(155,127,227,0.2), rgba(103,74,183,0.1))', border: '1px solid rgba(155,127,227,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
@@ -944,47 +758,28 @@ var QuestionPanel = function QuestionPanel(props) {
         </div>
       </div>
 
-      {/* Input row */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <textarea
-          value={question}
-          onChange={function(e) { setQuestion(e.target.value) }}
-          onKeyDown={handleKeyDown}
+        <textarea value={question} onChange={function(e) { setQuestion(e.target.value) }} onKeyDown={handleKeyDown}
           placeholder="Ask any question about your data — e.g. which segment performed best last month, or what is driving the decline in a KPI?"
           rows={2}
           style={{ flex: 1, padding: '10px 14px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', lineHeight: 1.5, resize: 'vertical', outline: 'none', transition: 'border-color var(--transition)' }}
           onFocus={function(e) { e.target.style.borderColor = 'rgba(155,127,227,0.5)' }}
           onBlur={function(e)  { e.target.style.borderColor = 'var(--border)' }}
         />
-        <button
-          onClick={handleAsk}
-          disabled={!question.trim() || loading}
-          style={{ padding: '0 20px', background: !question.trim() || loading ? 'transparent' : 'linear-gradient(135deg, rgba(155,127,227,0.2) 0%, rgba(103,74,183,0.14) 100%)', border: '1px solid ' + (!question.trim() || loading ? 'var(--border)' : 'rgba(155,127,227,0.4)'), borderRadius: 'var(--radius-md)', color: !question.trim() || loading ? 'var(--text-tertiary)' : '#B8A0F0', cursor: !question.trim() || loading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 7, transition: 'all var(--transition)', flexShrink: 0, alignSelf: 'stretch' }}
-        >
+        <button onClick={handleAsk} disabled={!question.trim() || loading}
+          style={{ padding: '0 20px', background: !question.trim() || loading ? 'transparent' : 'linear-gradient(135deg, rgba(155,127,227,0.2) 0%, rgba(103,74,183,0.14) 100%)', border: '1px solid ' + (!question.trim() || loading ? 'var(--border)' : 'rgba(155,127,227,0.4)'), borderRadius: 'var(--radius-md)', color: !question.trim() || loading ? 'var(--text-tertiary)' : '#B8A0F0', cursor: !question.trim() || loading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 7, transition: 'all var(--transition)', flexShrink: 0, alignSelf: 'stretch' }}>
           {loading ? <><span className="spinner" style={{ borderTopColor: '#B8A0F0', borderColor: 'var(--border)', width: 12, height: 12, borderWidth: 1.5 }} /> Thinking...</> : 'Ask'}
         </button>
       </div>
 
-      {error && (
-        <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
-          {error}
-        </p>
-      )}
+      {error && <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>{error}</p>}
 
-      {/* Answer blocks */}
       {answers.map(function(ans) {
-        var isExpanded = expandedAnswerId === ans.id   // ── FIX 3
+        var isExpanded = expandedAnswerId === ans.id
         return (
           <div key={ans.id} className="fade-in" style={{ marginTop: 20, background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid rgba(155,127,227,0.2)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-
-            {/* Top accent */}
             <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(155,127,227,0.5), transparent)' }} />
-
-            {/* Question header — clickable ── FIX 3 */}
-            <div
-              onClick={function() { setExpandedAnswerId(isExpanded ? null : ans.id) }}
-              style={{ padding: '14px 20px 12px', borderBottom: isExpanded ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
-            >
+            <div onClick={function() { setExpandedAnswerId(isExpanded ? null : ans.id) }} style={{ padding: '14px 20px 12px', borderBottom: isExpanded ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, flexShrink: 0, marginTop: 2, background: 'rgba(155,127,227,0.12)', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.25)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Q</span>
                 <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.5, flex: 1 }}>{ans.question}</p>
@@ -993,10 +788,8 @@ var QuestionPanel = function QuestionPanel(props) {
               </div>
             </div>
 
-            {/* Body — only when expanded ── FIX 3 */}
             {isExpanded && (
               <>
-                {/* Charts */}
                 {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).length > 0 && (
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: ans.queries.filter(function(q){ return !q.error && q.data && q.data.length }).length === 1 ? '1fr' : '1fr 1fr', gap: 12 }}>
@@ -1004,68 +797,42 @@ var QuestionPanel = function QuestionPanel(props) {
                     </div>
                   </div>
                 )}
-
-                {/* Failed queries */}
                 {ans.queries.filter(function(q) { return !!q.error }).map(function(q, i) {
-                  return (
-                    <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}>
-                      <p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>{q.title}: {q.error}</p>
-                    </div>
-                  )
+                  return <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}><p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>{q.title}: {q.error}</p></div>
                 })}
-
-                {/* Narrative */}
                 {ans.narrative && (
                   <div style={{ padding: '16px 20px' }}>
                     <div style={{ marginBottom: 14 }}>
                       <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Answer</p>
                       <p style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.7 }}>{ans.narrative.answer}</p>
                     </div>
-
                     {ans.narrative.key_findings && ans.narrative.key_findings.length > 0 && (
                       <div style={{ marginBottom: 14 }}>
                         <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Key Findings</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                           {ans.narrative.key_findings.map(function(f, i) {
-                            return (
-                              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                                <span style={{ color: '#B8A0F0', flexShrink: 0, marginTop: 1 }}>·</span>
-                                <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{f}</p>
-                              </div>
-                            )
+                            return <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ color: '#B8A0F0', flexShrink: 0, marginTop: 1 }}>·</span><p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{f}</p></div>
                           })}
                         </div>
                       </div>
                     )}
-
                     {ans.narrative.drivers && (
                       <div style={{ background: 'rgba(155,127,227,0.06)', border: '1px solid rgba(155,127,227,0.15)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 14 }}>
                         <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 5 }}>What's Driving This</p>
                         <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>{ans.narrative.drivers}</p>
                       </div>
                     )}
-
                     {ans.narrative.investigate && ans.narrative.investigate.length > 0 && (
                       <div style={{ background: 'rgba(240,160,48,0.05)', border: '1px solid rgba(240,160,48,0.15)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: ans.narrative.data_limitation ? 12 : 0 }}>
                         <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#F0A030', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Investigate Further</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {ans.narrative.investigate.map(function(item, i) {
-                            return (
-                              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                                <span style={{ color: '#F0A030', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 1 }}>{i+1}.</span>
-                                <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{item}</p>
-                              </div>
-                            )
+                            return <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ color: '#F0A030', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 1 }}>{i+1}.</span><p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{item}</p></div>
                           })}
                         </div>
                       </div>
                     )}
-
-                    {ans.narrative.data_limitation && (
-                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', fontStyle: 'italic', marginTop: 8 }}>
-                        Note: {ans.narrative.data_limitation}
-                      </p>
-                    )}
+                    {ans.narrative.data_limitation && <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', fontStyle: 'italic', marginTop: 8 }}>Note: {ans.narrative.data_limitation}</p>}
                   </div>
                 )}
               </>
@@ -1074,12 +841,9 @@ var QuestionPanel = function QuestionPanel(props) {
         )
       })}
 
-      {/* Empty state */}
       {answers.length === 0 && !loading && (
         <div style={{ padding: '20px 0', textAlign: 'center' }}>
-          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>
-            Ask any question about your data above — period context from your setup applies automatically.
-          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>Ask any question about your data above — period context from your setup applies automatically.</p>
         </div>
       )}
     </div>
