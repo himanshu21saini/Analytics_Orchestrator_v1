@@ -96,6 +96,9 @@ export function SetupScreenDev({ onReady }) {
   var [error,        setError]        = useState('')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
+  var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])  // fields that require a filter
+var [mandatoryFilterValues, setMandatoryFilterValues] = useState({})  // { field_name: selected_value }
+
   // Panel preferences — all on by default
   var [prefs, setPrefs] = useState({ decisions: true, summary: true, forecast: true, queryInspector: true, coveragePanel: true })
   // User context — uncontrolled textarea (ref) to avoid re-render on every keystroke
@@ -134,6 +137,26 @@ export function SetupScreenDev({ onReady }) {
       .catch(function() { setPeriodPairs([]); setSelPairIdx(0) })
   }, [selMeta, metaMode])
 
+  useEffect(function() {
+  var metaId = metaMode === 'existing' ? selMeta : null
+  if (!metaId) { setMandatoryFilterFields([]); setMandatoryFilterValues({}); return }
+  fetch('/api/metadata-fields?metadataSetId=' + metaId)
+    .then(function(r) { return r.json() })
+    .then(function(j) {
+      var fields = (j.fields || []).filter(function(f) {
+        return f.mandatory_filter_value && String(f.mandatory_filter_value).trim()
+      })
+      setMandatoryFilterFields(fields)
+      // Set defaults from mandatory_filter_value
+      var defaults = {}
+      fields.forEach(function(f) {
+        defaults[f.field_name] = String(f.mandatory_filter_value).trim()
+      })
+      setMandatoryFilterValues(defaults)
+    })
+    .catch(function() { setMandatoryFilterFields([]); setMandatoryFilterValues({}) })
+}, [selMeta, metaMode])
+  
   async function loadLists() {
     setLoadingLists(true)
     try {
@@ -244,6 +267,14 @@ export function SetupScreenDev({ onReady }) {
       var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
       var chosenPair  = activePairs[selPairIdx] || activePairs[0]
       setProgress('Composing intelligence queries...')
+
+      var mandatoryFilters = mandatoryFilterFields.map(function(f) {
+  return {
+    field:        f.field_name,
+    value:        mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(),
+    display_name: f.display_name || f.field_name,
+  }
+})
       var timePeriod = {
         viewType, year: selYear, month: selMonth, comparisonType: compType,
         yearField: chosenPair.yearField, monthField: chosenPair.monthField,
@@ -522,6 +553,84 @@ export function SetupScreenDev({ onReady }) {
           </div>
         </SectionCard>
 
+        {mandatoryFilterFields.length > 0 && (
+  <SectionCard n="3b" title="Data Filters">
+    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 14, lineHeight: 1.5 }}>
+      These filters are required by your dataset to avoid double-counting. Defaults are set from your metadata — adjust if needed.
+    </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {mandatoryFilterFields.map(function(f) {
+        // Parse sample_values into options array
+        var options = f.sample_values
+          ? String(f.sample_values).split(',').map(function(v) { return v.trim() }).filter(Boolean)
+          : []
+        // Always include the mandatory_filter_value as an option if not already present
+        var defaultVal = String(f.mandatory_filter_value).trim()
+        if (defaultVal && options.indexOf(defaultVal) === -1) options.unshift(defaultVal)
+        var selected = mandatoryFilterValues[f.field_name] || defaultVal
+
+        return (
+          <div key={f.field_name}>
+            <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, fontFamily: 'var(--font-body)' }}>
+              {f.display_name || f.field_name}
+            </p>
+            {options.length > 0 ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {options.map(function(opt) {
+                  var isActive = selected === opt
+                  return (
+                    <button
+                      key={opt}
+                      onClick={function() {
+                        setMandatoryFilterValues(function(prev) {
+                          var next = Object.assign({}, prev)
+                          next[f.field_name] = opt
+                          return next
+                        })
+                      }}
+                      style={{
+                        padding: '6px 16px', borderRadius: 'var(--radius-sm)',
+                        fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                        fontFamily: 'var(--font-body)', letterSpacing: '0.06em',
+                        border: '1px solid ' + (isActive ? 'rgba(240,160,48,0.5)' : 'var(--border)'),
+                        background: isActive ? 'rgba(240,160,48,0.12)' : 'transparent',
+                        color: isActive ? '#F0A030' : 'var(--text-secondary)',
+                        transition: 'all var(--transition)',
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              // Fallback: free text input if no sample_values
+              <input
+                type="text"
+                value={selected}
+                onChange={function(e) {
+                  var val = e.target.value
+                  setMandatoryFilterValues(function(prev) {
+                    var next = Object.assign({}, prev)
+                    next[f.field_name] = val
+                    return next
+                  })
+                }}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', outline: 'none' }}
+                onFocus={function(e) { e.target.style.borderColor = 'rgba(240,160,48,0.4)' }}
+                onBlur={function(e)  { e.target.style.borderColor = 'var(--border)' }}
+              />
+            )}
+            <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 5, fontFamily: 'var(--font-body)' }}>
+              Default: <span style={{ color: '#F0A030' }}>{defaultVal}</span>
+              {selected !== defaultVal && <span style={{ color: 'var(--text-accent)', marginLeft: 8 }}>· Changed to: {selected}</span>}
+            </p>
+          </div>
+        )
+      })}
+    </div>
+  </SectionCard>
+)}
         {/* Section 3: User Context */}
         <SectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
           <textarea
@@ -784,6 +893,9 @@ export function SetupScreenProd({ onReady }) {
   var [compType,     setCompType]     = useState('YoY')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
+  var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])  // fields that require a filter
+var [mandatoryFilterValues, setMandatoryFilterValues] = useState({})  // { field_name: selected_value }
+
   var [prefs,        setPrefs]        = useState({ decisions: true, summary: true, forecast: true, queryInspector: true, coveragePanel: true })
   var [working,      setWorking]      = useState(false)
   var [progress,     setProgress]     = useState('')
@@ -802,6 +914,26 @@ export function SetupScreenProd({ onReady }) {
   var allowedComp = COMPARISON_OPTIONS[viewType] || []
   var activePair  = periodPairs[selPairIdx] || periodPairs[0]
 
+  useEffect(function() {
+  var metaId = metaMode === 'existing' ? selMeta : null
+  if (!metaId) { setMandatoryFilterFields([]); setMandatoryFilterValues({}); return }
+  fetch('/api/metadata-fields?metadataSetId=' + metaId)
+    .then(function(r) { return r.json() })
+    .then(function(j) {
+      var fields = (j.fields || []).filter(function(f) {
+        return f.mandatory_filter_value && String(f.mandatory_filter_value).trim()
+      })
+      setMandatoryFilterFields(fields)
+      // Set defaults from mandatory_filter_value
+      var defaults = {}
+      fields.forEach(function(f) {
+        defaults[f.field_name] = String(f.mandatory_filter_value).trim()
+      })
+      setMandatoryFilterValues(defaults)
+    })
+    .catch(function() { setMandatoryFilterFields([]); setMandatoryFilterValues({}) })
+}, [selMeta, metaMode])
+  
   useEffect(function() { loadLists() }, [])
 
   // Auto-advance splash after 2s
@@ -973,6 +1105,13 @@ var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null,
       var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
       var chosenPair  = activePairs[selPairIdx] || activePairs[0]
       setProgress('Composing intelligence queries...')
+      var mandatoryFilters = mandatoryFilterFields.map(function(f) {
+  return {
+    field:        f.field_name,
+    value:        mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(),
+    display_name: f.display_name || f.field_name,
+  }
+})
       var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
       var gqRes = await fetch('/api/generate-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod, userContext: userContext || null }) })
       var gqJson = await gqRes.json()
@@ -1152,6 +1291,50 @@ var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null,
         {/* ── RIGHT CARD: sections 3 + 4 + build ───────────────────── */}
         <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
+          {mandatoryFilterFields.length > 0 && (
+  <ProdSectionCard n="2b" title="Data Filters">
+    <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
+      Required filters to avoid double-counting. Defaults from metadata — adjust if needed.
+    </p>
+    {mandatoryFilterFields.map(function(f) {
+      var options = f.sample_values
+        ? String(f.sample_values).split(',').map(function(v) { return v.trim() }).filter(Boolean)
+        : []
+      var defaultVal = String(f.mandatory_filter_value).trim()
+      if (defaultVal && options.indexOf(defaultVal) === -1) options.unshift(defaultVal)
+      var selected = mandatoryFilterValues[f.field_name] || defaultVal
+
+      return (
+        <div key={f.field_name} style={{ marginBottom: 12 }}>
+          <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>
+            {f.display_name || f.field_name}
+          </p>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {options.map(function(opt) {
+              var isActive = selected === opt
+              return (
+                <ProdChip
+                  key={opt}
+                  active={isActive}
+                  onClick={function() {
+                    setMandatoryFilterValues(function(prev) {
+                      var next = Object.assign({}, prev); next[f.field_name] = opt; return next
+                    })
+                  }}
+                >
+                  {opt}
+                </ProdChip>
+              )
+            })}
+          </div>
+          {selected !== defaultVal && (
+            <p style={{ fontSize: 9, color: 'var(--text-accent)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>Changed from default: {defaultVal}</p>
+          )}
+        </div>
+      )
+    })}
+  </ProdSectionCard>
+)}
 
           {/* Section 3: Context */}
           <ProdSectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
