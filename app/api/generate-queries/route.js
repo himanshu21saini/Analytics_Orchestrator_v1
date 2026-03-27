@@ -11,8 +11,8 @@ function isFiscalField(yearField) {
 
 function buildPeriodFilters(datasetId, tp) {
   var vt = tp.viewType
-  var yr = parseInt(tp.year)    // calendar year (as-of)
-  var mo = parseInt(tp.month)   // calendar month (as-of)
+  var yr = parseInt(tp.year)
+  var mo = parseInt(tp.month)
   var ct = tp.comparisonType
   var yf = tp.yearField  || 'year'
   var mf = tp.monthField || 'month'
@@ -23,19 +23,8 @@ function buildPeriodFilters(datasetId, tp) {
   var viewLabel, cmpLabel
 
   if (fiscal) {
-    // Translate calendar as-of date to fiscal month
     var cur = toFiscal(yr, mo)
     var curFM = cur.fiscalMonth
-
-    // Derive which fiscal year this as-of date belongs to
-    // If calMonth >= FISCAL_START_MONTH we are in the fiscal year that started this calendar year
-    // Otherwise we are in the fiscal year that started last calendar year
-    // The data stores fiscal year as an integer — we need to find the right one
-    // We don't track fiscal year number here, we just use curCond on Fiscal_Month
-    // and rely on the data's Fiscal_Year field being correct
-    // So: curYear in the SQL = the Fiscal_Year value for the as-of calendar month
-    // When calMonth >= FISCAL_START_MONTH: fiscal year started in this cal year, so Fiscal_Year = cal year + 1
-    // When calMonth < FISCAL_START_MONTH: fiscal year started last cal year, so Fiscal_Year = cal year
     curYear = mo >= FISCAL_START_MONTH ? yr + 1 : yr
 
     if (vt === 'MTD') {
@@ -58,9 +47,7 @@ function buildPeriodFilters(datasetId, tp) {
       else          { cmpYear = curYear;     cmpMonthMin = cqs - 3; cmpMonthMax = cmpMonthMin + 2 }
     }
 
-    // Calendar range labels e.g. "Nov 25–Feb 26 (YTD)"
     var curRange = fiscalRangeLabel(yr, mo, curMonthMin, curMonthMax)
-    // For comparison, shift the as-of year by 1 back
     var cmpAsOfYr = yr - 1; var cmpAsOfMo = mo
     var cmpRange  = fiscalRangeLabel(cmpAsOfYr, cmpAsOfMo, cmpMonthMin, cmpMonthMax)
     var cmpTag    = ct === 'YoY' ? '(YoY)' : ct === 'MoM' ? '(MoM)' : '(QoQ)'
@@ -68,7 +55,6 @@ function buildPeriodFilters(datasetId, tp) {
     cmpLabel  = 'vs ' + cmpRange + ' ' + cmpTag
 
   } else {
-    // Calendar mode — original logic unchanged
     curYear     = yr
     curMonthMin = vt === 'MTD' ? mo : vt === 'YTD' ? 1 : quarterStart(mo)
     curMonthMax = mo
@@ -110,54 +96,29 @@ function buildPeriodFilters(datasetId, tp) {
 
   var curCond    = cond(curYear, curMonthMin, curMonthMax)
   var cmpCond    = cond(cmpYear, cmpMonthMin, cmpMonthMax)
-  // Point-in-time conditions — always single latest month only
-  // For YTD/QTD these differ from curCond/cmpCond; for MTD they are identical
   var curCondPIT = cond(curYear, curMonthMax, curMonthMax)
   var cmpCondPIT = cond(cmpYear, cmpMonthMax, cmpMonthMax)
 
   return { curCond, cmpCond, curCondPIT, cmpCondPIT, curYear, cmpYear, viewLabel, cmpLabel, yf, mf, fiscal }
 }
 
-// ── PRE-ANALYSIS: compute real variance for every KPI × dimension pair ────────
-//
-// For each combination we run a lightweight SQL query that groups the KPI by
-// the dimension and computes:
-//   - mean across segments
-//   - coefficient of variation (CV = stddev / mean)  ← key signal
-//   - min / max segment values
-//   - number of distinct segments
-//
-// CV is the best proxy for "does this dimension actually reveal something
-// interesting about this KPI?":
-//   CV > 0.3  → high variance → great breakdown candidate
-//   CV 0.1-0.3 → moderate → worth showing
-//   CV < 0.1  → low variance → dimension adds little insight
-//
-// We also compute YoY delta per segment so the LLM knows which segments
-// are diverging (a segment moving away from peers is the most exec-relevant signal).
-
+// ── PRE-ANALYSIS ──────────────────────────────────────────────────────────────
 async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond, curCondPIT, cmpCondPIT) {
   var results = []
-
-  // Cap: analyse top 5 KPIs × top 6 dimensions = max 30 queries
-  // Each is a tiny GROUP BY on an indexed JSONB column — fast
   var kpiSample = kpis.slice(0, 5)
   var dimSample = dims.slice(0, 6)
 
   for (var ki = 0; ki < kpiSample.length; ki++) {
     var kpi = kpiSample[ki]
-    // Detect COUNT DISTINCT KPIs from calculation_logic or aggregation field
     var isCountDistinct = /distinct/i.test(kpi.calculation_logic || '') || /count_distinct/i.test(kpi.aggregation || '')
     var distField = isCountDistinct ? (kpi.dependencies || kpi.field_name) : null
     var isPIT     = !isCountDistinct && kpi.accumulation_type === 'point_in_time'
     var agg       = isCountDistinct ? null : (isPIT ? 'AVG' : 'SUM')
-    // Use PIT conditions for point_in_time KPIs
     var useCurCond = (isPIT && curCondPIT) ? curCondPIT : curCond
     var useCmpCond = (isPIT && cmpCondPIT) ? cmpCondPIT : cmpCond
 
     for (var di = 0; di < dimSample.length; di++) {
       var dim = dimSample[di]
-
       try {
         var sql
         if (isCountDistinct && distField) {
@@ -191,62 +152,55 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond, curCondPI
         }
 
         var rows = await query(sql)
-
-        // Need at least 2 segments to compute variance meaningfully
         if (!rows || rows.length < 2) continue
 
         var curVals = rows.map(function(r) { return parseFloat(r.cur_val) || 0 })
         var mean    = curVals.reduce(function(a, b) { return a + b }, 0) / curVals.length
         if (mean === 0) continue
 
-        // Population std dev
         var variance = curVals.reduce(function(acc, v) { return acc + Math.pow(v - mean, 2) }, 0) / curVals.length
         var stdDev   = Math.sqrt(variance)
         var cv       = stdDev / Math.abs(mean)
 
-        // Segments diverging from peers (largest absolute delta vs mean)
         var outliers = rows
           .map(function(r) {
-            var cur     = parseFloat(r.cur_val) || 0
-            var cmp     = parseFloat(r.cmp_val) || 0
+            var cur = parseFloat(r.cur_val) || 0
+            var cmp = parseFloat(r.cmp_val) || 0
             var devFromMean = ((cur - mean) / Math.abs(mean) * 100)
             var yoyDelta    = cmp !== 0 ? ((cur - cmp) / Math.abs(cmp) * 100) : null
             return { segment: r.segment, cur_val: cur, cmp_val: cmp, dev_from_mean_pct: devFromMean, yoy_delta_pct: yoyDelta }
           })
           .sort(function(a, b) { return Math.abs(b.dev_from_mean_pct) - Math.abs(a.dev_from_mean_pct) })
 
-        // Top outlier = the most diverging segment
         var topOutlier   = outliers[0]
-        var topSegment   = rows[0]  // highest current value segment
-        var worstSegment = rows[rows.length - 1] // lowest
+        var topSegment   = rows[0]
+        var worstSegment = rows[rows.length - 1]
 
         results.push({
-          kpi_field:       kpi.field_name,
-          kpi_display:     kpi.display_name,
-          kpi_unit:        kpi.unit || '',
-          kpi_priority:    kpi.business_priority || 'medium',
-          dim_field:       dim.field_name,
-          dim_display:     dim.display_name,
-          segment_count:   rows.length,
-          cv:              Math.round(cv * 1000) / 1000,
-          cv_label:        cv > 0.3 ? 'high' : cv > 0.1 ? 'medium' : 'low',
-          mean_val:        Math.round(mean * 100) / 100,
-          top_segment:     topSegment ? { name: topSegment.segment, value: Math.round((parseFloat(topSegment.cur_val) || 0) * 100) / 100 } : null,
-          worst_segment:   worstSegment ? { name: worstSegment.segment, value: Math.round((parseFloat(worstSegment.cur_val) || 0) * 100) / 100 } : null,
-          top_outlier:     topOutlier ? {
-            name:             topOutlier.segment,
+          kpi_field:     kpi.field_name,
+          kpi_display:   kpi.display_name,
+          kpi_unit:      kpi.unit || '',
+          kpi_priority:  kpi.business_priority || 'medium',
+          dim_field:     dim.field_name,
+          dim_display:   dim.display_name,
+          segment_count: rows.length,
+          cv:            Math.round(cv * 1000) / 1000,
+          cv_label:      cv > 0.3 ? 'high' : cv > 0.1 ? 'medium' : 'low',
+          mean_val:      Math.round(mean * 100) / 100,
+          top_segment:   topSegment ? { name: topSegment.segment, value: Math.round((parseFloat(topSegment.cur_val) || 0) * 100) / 100 } : null,
+          worst_segment: worstSegment ? { name: worstSegment.segment, value: Math.round((parseFloat(worstSegment.cur_val) || 0) * 100) / 100 } : null,
+          top_outlier:   topOutlier ? {
+            name:              topOutlier.segment,
             dev_from_mean_pct: Math.round(topOutlier.dev_from_mean_pct * 10) / 10,
-            yoy_delta_pct:    topOutlier.yoy_delta_pct !== null ? Math.round(topOutlier.yoy_delta_pct * 10) / 10 : null,
+            yoy_delta_pct:     topOutlier.yoy_delta_pct !== null ? Math.round(topOutlier.yoy_delta_pct * 10) / 10 : null,
           } : null,
         })
       } catch (e) {
-        // Non-fatal — skip this KPI × dim pair if SQL fails
         console.warn('pre-analysis skip:', kpi.field_name, 'x', dim.field_name, e.message)
       }
     }
   }
 
-  // Sort by informativeness: KPI priority first, then CV descending
   var priOrder = { high: 3, medium: 2, low: 1 }
   results.sort(function(a, b) {
     var pa = priOrder[a.kpi_priority.toLowerCase()] || 1
@@ -258,7 +212,6 @@ async function runPreAnalysis(datasetId, kpis, dims, curCond, cmpCond, curCondPI
   return results
 }
 
-// ── Format pre-analysis for the LLM prompt ───────────────────────────────────
 function formatPreAnalysis(preAnalysis) {
   if (!preAnalysis || !preAnalysis.length) return '(pre-analysis unavailable)'
 
@@ -276,7 +229,6 @@ function formatPreAnalysis(preAnalysis) {
     '',
   ]
 
-  // Group by KPI for readability
   var byKpi = {}
   preAnalysis.forEach(function(r) {
     if (!byKpi[r.kpi_field]) byKpi[r.kpi_field] = []
@@ -284,10 +236,9 @@ function formatPreAnalysis(preAnalysis) {
   })
 
   Object.keys(byKpi).forEach(function(kpiField) {
-    var rows = byKpi[kpiField]
+    var rows  = byKpi[kpiField]
     var first = rows[0]
     lines.push('── ' + first.kpi_display + ' (' + first.kpi_field + ', priority: ' + first.kpi_priority + ')')
-
     rows.forEach(function(r) {
       var outStr = ''
       if (r.top_outlier) {
@@ -295,9 +246,8 @@ function formatPreAnalysis(preAnalysis) {
           ' (' + (r.top_outlier.dev_from_mean_pct > 0 ? '+' : '') + r.top_outlier.dev_from_mean_pct + '% from mean' +
           (r.top_outlier.yoy_delta_pct !== null ? ', YoY: ' + (r.top_outlier.yoy_delta_pct > 0 ? '+' : '') + r.top_outlier.yoy_delta_pct + '%' : '') + ')'
       }
-      var topStr = r.top_segment ? ' | top: ' + r.top_segment.name : ''
+      var topStr  = r.top_segment ? ' | top: ' + r.top_segment.name : ''
       var wrstStr = r.worst_segment && r.worst_segment.name !== (r.top_segment && r.top_segment.name) ? ' | worst: ' + r.worst_segment.name : ''
-
       lines.push(
         '   dim=' + r.dim_display.padEnd(18) +
         ' CV=' + String(r.cv).padEnd(6) +
@@ -312,23 +262,13 @@ function formatPreAnalysis(preAnalysis) {
   return lines.join('\n')
 }
 
-
-// ── Intent-specific query builder ────────────────────────────────────────────
-// All SQL strings use double-quote JS delimiters to avoid collision with
-// Postgres data->>'field' single quotes inside the string.
 function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
   if (!intent || !intent.type || intent.type === "null") return []
 
   var queries = []
   var base = "FROM dataset_rows WHERE dataset_id = " + datasetId + " AND " + f.curCond + CF
 
-  // Safe ORDER BY — casts to integer only when field name looks numeric/sequential.
-  // Falls back to plain text sort for display-label fields like interval names.
-  // Look up the correct SQL aggregation function for a metric field.
-  // Uses the metadata aggregation column if available.
-  // Falls back to AVG for point_in_time and SUM for cumulative.
   function aggFn(fieldName) {
-    // Case-insensitive match — LLM may extract 'revenue' when metadata has 'Revenue'
     var normalised = (fieldName || '').toLowerCase()
     var meta = metaRows && metaRows.find(function(m) {
       return (m.field_name || '').toLowerCase() === normalised
@@ -340,12 +280,10 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       if (agg === 'COUNT')          return 'COUNT'
       if (agg === 'MAX')            return 'MAX'
       if (agg === 'MIN')            return 'MIN'
-      if (agg === 'COUNT_DISTINCT') return 'COUNT'  // fallback for drilldown context
-      // Fall through to accumulation_type heuristic
+      if (agg === 'COUNT_DISTINCT') return 'COUNT'
       if (meta.accumulation_type === 'cumulative')    return 'SUM'
       if (meta.accumulation_type === 'point_in_time') return 'AVG'
     }
-    // Default: if no metadata, use AVG (safe for scores/ratios, slightly undercounts cumulative)
     return 'AVG'
   }
 
@@ -356,7 +294,6 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
     return "data->>'" + field + "' ASC"
   }
 
-  // ── RANKING ───────────────────────────────────────────────────────────────
   if (intent.type === "ranking" || intent.type === "ranking_with_drilldown") {
     var entity = intent.primary_entity         || "branch_name"
     var metric = intent.primary_metric         || "bfi_2_score"
@@ -371,39 +308,13 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       "GROUP BY data->>'" + entity + "' ORDER BY current_value " + dir + " LIMIT " + topN
 
     queries.push({
-      id:               "intent_ranking_" + entity,
-      title:            mDisp + " by " + eDisp + " — Ranked",
-      chart_type:       "bar",
-      sql:              rankSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "",
-      insight:          "Ranks every " + eDisp + " by " + aggFn(metric).toLowerCase() + " " + mDisp + ". " + (dir === "DESC" ? "Highest values first." : "Lowest values first."),
-      priority:         50,
-      intent_generated: true,
-    })
-
-    var stressSQL = "SELECT data->>'Stress Type' AS label, COUNT(*) AS current_value " +
-      base + " AND data->>'Stress Type' IS NOT NULL AND data->>'Stress Type' != '' " +
-      "GROUP BY data->>'Stress Type' ORDER BY current_value DESC"
-
-    queries.push({
-      id:               "intent_stress_distribution",
-      title:            "Distribution by Stress Type",
-      chart_type:       "donut",
-      sql:              stressSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "count",
-      insight:          "Proportion of records in each stress category for the selected period.",
-      priority:         51,
-      intent_generated: true,
+      id: "intent_ranking_" + entity, title: mDisp + " by " + eDisp + " — Ranked",
+      chart_type: "bar", sql: rankSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", unit: "", insight: "Ranks every " + eDisp + " by " + aggFn(metric).toLowerCase() + " " + mDisp + ".",
+      priority: 50, intent_generated: true,
     })
   }
 
-  // ── RANKING WITH DRILLDOWN ────────────────────────────────────────────────
   if (intent.type === "ranking_with_drilldown") {
     var ddDim    = intent.drilldown_dimension    || "interval_sort_order"
     var ddLabel  = intent.drilldown_label_field  || ddDim
@@ -414,7 +325,6 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
     var ddEDisp  = intent.primary_entity_display || ddEntity
     var ddTopN   = parseInt(intent.top_n)        || 5
 
-    // Intra-day / sub-dimension line — avg metric across all entities by time slot
     var groupByDrill = ddDim !== ddLabel
       ? "GROUP BY data->>'" + ddLabel + "', data->>'" + ddDim + "'"
       : "GROUP BY data->>'" + ddLabel + "'"
@@ -425,20 +335,12 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       groupByDrill + " ORDER BY " + safeIntOrder(ddDim)
 
     queries.push({
-      id:               "intent_drilldown_" + ddDim,
-      title:            ddMDisp + " across " + ddDisp + "s",
-      chart_type:       "line",
-      sql:              drillSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "",
-      insight:          aggFn(ddMetric) + " of " + ddMDisp + " per " + ddDisp.toLowerCase() + " across all entities.",
-      priority:         52,
-      intent_generated: true,
+      id: "intent_drilldown_" + ddDim, title: ddMDisp + " across " + ddDisp + "s",
+      chart_type: "line", sql: drillSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", unit: "", insight: aggFn(ddMetric) + " of " + ddMDisp + " per " + ddDisp.toLowerCase() + " across all entities.",
+      priority: 52, intent_generated: true,
     })
 
-    // Top-N entity × drilldown slot — rendered as DrillDownChart (interactive)
     var groupByHeat = "GROUP BY data->>'" + ddEntity + "', data->>'" + ddLabel + "'" +
       (ddDim !== ddLabel ? ", data->>'" + ddDim + "'" : "")
 
@@ -457,26 +359,16 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       groupByHeat + " ORDER BY data->>'" + ddEntity + "', " + safeIntOrder(ddDim)
 
     queries.push({
-      id:               "intent_heatmap_" + ddEntity + "_" + ddDim,
-      title:            "Top " + ddTopN + " " + ddEDisp + "s — " + ddMDisp + " by " + ddDisp,
-      chart_type:       "drilldown",
-      sql:              heatSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      slot_key:         "slot",
-      slot_sort_key:    "slot_sort",
-      entity_display:   ddEDisp,
-      slot_display:     ddDisp,
-      metric_display:   ddMDisp,
-      unit:             "",
-      insight:          "Click any " + ddEDisp.toLowerCase() + " to see its " + ddDisp.toLowerCase() + " breakdown.",
-      priority:         53,
-      intent_generated: true,
+      id: "intent_heatmap_" + ddEntity + "_" + ddDim,
+      title: "Top " + ddTopN + " " + ddEDisp + "s — " + ddMDisp + " by " + ddDisp,
+      chart_type: "drilldown", sql: heatSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", slot_key: "slot", slot_sort_key: "slot_sort",
+      entity_display: ddEDisp, slot_display: ddDisp, metric_display: ddMDisp,
+      unit: "", insight: "Click any " + ddEDisp.toLowerCase() + " to see its " + ddDisp.toLowerCase() + " breakdown.",
+      priority: 53, intent_generated: true,
     })
   }
 
-  // ── DISTRIBUTION ─────────────────────────────────────────────────────────
   if (intent.type === "distribution") {
     var distDim    = intent.distribution_dimension || "Stress Type"
     var distMetric = intent.distribution_metric    || "bfi_2_score"
@@ -486,17 +378,10 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       "GROUP BY data->>'" + distDim + "' ORDER BY current_value DESC"
 
     queries.push({
-      id:               "intent_dist_" + distDim.replace(/\s+/g, "_"),
-      title:            "Distribution by " + distDim,
-      chart_type:       "donut",
-      sql:              distSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "count",
-      insight:          "Spread of records across each " + distDim + " category.",
-      priority:         50,
-      intent_generated: true,
+      id: "intent_dist_" + distDim.replace(/\s+/g, "_"), title: "Distribution by " + distDim,
+      chart_type: "donut", sql: distSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", unit: "count", insight: "Spread of records across each " + distDim + " category.",
+      priority: 50, intent_generated: true,
     })
 
     var distBarSQL = "SELECT data->>'" + distDim + "' AS label, " +
@@ -505,21 +390,13 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       "GROUP BY data->>'" + distDim + "' ORDER BY current_value DESC"
 
     queries.push({
-      id:               "intent_dist_bar_" + distDim.replace(/\s+/g, "_"),
-      title:            "Avg " + distMetric + " by " + distDim,
-      chart_type:       "bar",
-      sql:              distBarSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "",
-      insight:          aggFn(distMetric) + " of " + distMetric + " for each " + distDim + " category.",
-      priority:         51,
-      intent_generated: true,
+      id: "intent_dist_bar_" + distDim.replace(/\s+/g, "_"), title: "Avg " + distMetric + " by " + distDim,
+      chart_type: "bar", sql: distBarSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", unit: "", insight: aggFn(distMetric) + " of " + distMetric + " for each " + distDim + " category.",
+      priority: 51, intent_generated: true,
     })
   }
 
-  // ── TEMPORAL ─────────────────────────────────────────────────────────────
   if (intent.type === "temporal") {
     var timeDim   = intent.time_dimension   || "interval_sort_order"
     var timeLabel = intent.time_label_field || timeDim
@@ -536,17 +413,10 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
       groupByTemporal + " ORDER BY " + safeIntOrder(timeDim)
 
     queries.push({
-      id:               "intent_temporal_" + timeDim,
-      title:            timeMet + " Pattern by " + (timeLabel !== timeDim ? timeLabel : timeDim),
-      chart_type:       "area",
-      sql:              temporalSQL,
-      current_key:      "current_value",
-      value_key:        "current_value",
-      label_key:        "label",
-      unit:             "",
-      insight:          "How " + timeMet + " evolves across each " + timeLabel + ". Peaks reveal the highest-stress slots.",
-      priority:         50,
-      intent_generated: true,
+      id: "intent_temporal_" + timeDim, title: timeMet + " Pattern by " + (timeLabel !== timeDim ? timeLabel : timeDim),
+      chart_type: "area", sql: temporalSQL, current_key: "current_value", value_key: "current_value",
+      label_key: "label", unit: "", insight: "How " + timeMet + " evolves across each " + timeLabel + ".",
+      priority: 50, intent_generated: true,
     })
   }
 
@@ -564,34 +434,42 @@ export async function POST(request) {
     return Response.json({ error: 'Invalid request body.' }, { status: 400 })
   }
 
-  var metadataSetId = body.metadataSetId
-  var datasetId     = body.datasetId
-  var timePeriod    = body.timePeriod || { viewType: 'YTD', year: 2024, month: 12, comparisonType: 'YoY' }
-  var userContext   = body.userContext || null  // { filters, kpi_focus, explanation, intent }
+  var metadataSetId    = body.metadataSetId
+  var datasetId        = body.datasetId
+  var timePeriod       = body.timePeriod || { viewType: 'YTD', year: 2024, month: 12, comparisonType: 'YoY' }
+  var userContext      = body.userContext      || null
+  var mandatoryFilters = body.mandatoryFilters || []   // ── NEW
 
   if (!metadataSetId || !datasetId) {
     return Response.json({ error: 'metadataSetId and datasetId are required.' }, { status: 400 })
   }
 
-  // Build SQL fragment for user context filters
-  // e.g. "AND data->>'Region' = 'West'"
+  // ── Build context filter SQL ──────────────────────────────────────────────
   var contextFilterSQL = ''
   if (userContext && userContext.filters && userContext.filters.length) {
     contextFilterSQL = userContext.filters.map(function(f) {
-      var op = f.operator || '='
-      var val = String(f.value || '').replace(/'/g, "''")  // escape single quotes
+      var op  = f.operator || '='
+      var val = String(f.value || '').replace(/'/g, "''")
       return "AND data->>'" + f.field + "' " + op + " '" + val + "'"
     }).join(' ')
   }
 
-  // Boost priority of KPI focus fields by sorting them to front of kpis array
+  // ── Build mandatory filter SQL ────────────────────────────────────────────
+  var mandatoryFilterSQL = ''
+  if (mandatoryFilters && mandatoryFilters.length) {
+    mandatoryFilterSQL = mandatoryFilters.map(function(f) {
+      var val = String(f.value || '').replace(/'/g, "''")
+      return " AND data->>'" + f.field + "' = '" + val + "'"
+    }).join('')
+  }
+
   function applyFocusPriority(kpiArray) {
     if (!userContext || !userContext.kpi_focus || !userContext.kpi_focus.length) return kpiArray
     var focus = userContext.kpi_focus
     return kpiArray.slice().sort(function(a, b) {
       var aFocus = focus.indexOf(a.field_name) >= 0 ? 1 : 0
       var bFocus = focus.indexOf(b.field_name) >= 0 ? 1 : 0
-      return bFocus - aFocus  // focus fields first
+      return bFocus - aFocus
     })
   }
 
@@ -611,24 +489,24 @@ export async function POST(request) {
     return p === 'high' ? 3 : p === 'medium' ? 2 : 1
   }
 
-  // is_output = 'N' rows are excluded entirely — LLM never sees them
   var kpis    = metaRows.filter(function(m) { return m.type === 'kpi'         && m.is_output !== 'N' }).sort(function(a,b) { return pri(b)-pri(a) })
   var derived = metaRows.filter(function(m) { return m.type === 'derived_kpi' && m.is_output !== 'N' })
   var dims    = metaRows.filter(function(m) { return m.type === 'dimension'   && m.is_output !== 'N' })
 
-  // Apply KPI focus priority — focus KPIs bubble to front
   kpis    = applyFocusPriority(kpis)
   derived = applyFocusPriority(derived)
 
   var topKpis    = kpis.slice(0, 6)
   var topDerived = derived.slice(0, 4)
 
-  // ── RUN PRE-ANALYSIS before calling LLM ──────────────────────────────────
-  // Context filter is applied here too so CV scores reflect the filtered population
-  var contextCurCond    = f.curCond    + (contextFilterSQL ? ' ' + contextFilterSQL : '')
-  var contextCmpCond    = f.cmpCond    + (contextFilterSQL ? ' ' + contextFilterSQL : '')
-  var contextCurCondPIT = f.curCondPIT + (contextFilterSQL ? ' ' + contextFilterSQL : '')
-  var contextCmpCondPIT = f.cmpCondPIT + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  // ── CF = context filters + mandatory filters ──────────────────────────────
+  var CF = (contextFilterSQL ? ' ' + contextFilterSQL : '') + mandatoryFilterSQL
+
+  var contextCurCond    = f.curCond    + (CF ? ' ' + CF.trim() : '')
+  var contextCmpCond    = f.cmpCond    + (CF ? ' ' + CF.trim() : '')
+  var contextCurCondPIT = f.curCondPIT + (CF ? ' ' + CF.trim() : '')
+  var contextCmpCondPIT = f.cmpCondPIT + (CF ? ' ' + CF.trim() : '')
+
   console.log('=== pre-analysis: running', topKpis.length, 'KPIs ×', dims.length, 'dims')
   var preAnalysis = await runPreAnalysis(datasetId, topKpis, dims, contextCurCond, contextCmpCond, contextCurCondPIT, contextCmpCondPIT)
   var preAnalysisText = formatPreAnalysis(preAnalysis)
@@ -637,68 +515,43 @@ export async function POST(request) {
   function fieldList(arr) {
     return arr.map(function(m) {
       return {
-        field_name:           m.field_name,
-        display_name:         m.display_name,
-        unit:                 m.unit || '',
-        definition:           m.definition || '',
-        aggregation:          m.aggregation || 'SUM',
-        business_priority:    m.business_priority || 'Medium',
-        accumulation_type:    m.accumulation_type || 'cumulative',
-        favorable_direction:  m.favorable_direction || 'i',
-        calculation_logic:    m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
-        dependencies:         m.type === 'derived_kpi' ? (m.dependencies || '') : undefined,
-        benchmark:            m.benchmark || '',
+        field_name:          m.field_name,
+        display_name:        m.display_name,
+        unit:                m.unit || '',
+        definition:          m.definition || '',
+        aggregation:         m.aggregation || 'SUM',
+        business_priority:   m.business_priority || 'Medium',
+        accumulation_type:   m.accumulation_type || 'cumulative',
+        favorable_direction: m.favorable_direction || 'i',
+        calculation_logic:   m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
+        dependencies:        m.type === 'derived_kpi' ? (m.dependencies || '') : undefined,
+        benchmark:           m.benchmark || '',
       }
     })
   }
 
-  var CF = contextFilterSQL ? ' ' + contextFilterSQL : ''  // context filter fragment
-
-  // Standard cumulative template — sums across the full period range (YTD, QTD, MTD)
-  var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
-
-  // Point-in-time template — uses latest single month only, not the full range
-  // Use this for balance sheet / stock metrics (Loans, Deposits, AUM, etc.)
+  // SQL templates
+  var tplSum  = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
   var tplPIT  = "SELECT AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCondPIT + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
-
-  // Legacy AVG template (kept for backward compat — prefer T-PIT for point_in_time)
   var tplAvg  = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
-
-  // Count distinct templates — for # Accounts, # Clients, # Households, # Bankers
-  // Uses PIT conditions so count reflects snapshot at as-of month, not cumulative unique count
   var tplCountDistinct    = "SELECT COUNT(DISTINCT CASE WHEN " + f.curCondPIT + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCondPIT + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
   var tplCountDistinctBar = "SELECT data->>'__DIM__' AS label, COUNT(DISTINCT CASE WHEN " + f.curCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS current_value, COUNT(DISTINCT CASE WHEN " + f.cmpCond + " THEN data->>'__DIST_FIELD__' ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
-
-  var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
-
-
-  // T-BAR-PIT: point_in_time bar — as-of month snapshot per segment (not full period sum)
-  var tplBarPIT = "SELECT data->>'__DIM__' AS label, " +
-    "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS current_value, " +
-    "AVG(CASE WHEN " + f.cmpCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS comparison_value " +
-    "FROM dataset_rows WHERE dataset_id = " + datasetId + CF +
-    " GROUP BY label ORDER BY current_value DESC LIMIT 10"
-
-  // T-PIE-PIT: point_in_time pie/donut — as-of month snapshot per category
-  var tplPiePIT = "SELECT data->>'__DIM__' AS label, " +
-    "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS value " +
-    "FROM dataset_rows WHERE dataset_id = " + datasetId + CF +
-    " GROUP BY label ORDER BY value DESC LIMIT 6"
-
-  // T-SCATTER-PIT: point_in_time scatter — both axes use latest month snapshot
-  var tplScatterPIT = "SELECT data->>'__DIM__' AS label, " +
-    "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, " +
-    "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value " +
-    "FROM dataset_rows WHERE dataset_id = " + datasetId + CF +
-    " AND " + f.curCondPIT + " GROUP BY label"
-
+  var tplBar  = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
+  var tplBarPIT = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
+  var tplPiePIT = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY value DESC LIMIT 6"
+  var tplScatterPIT = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND " + f.curCondPIT + " GROUP BY label"
   var tplLine = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, __AGG__(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
-
-  var tplPie = "SELECT data->>'__DIM__' AS label, __AGG__(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY value DESC LIMIT 6"
-
+  var tplPie  = "SELECT data->>'__DIM__' AS label, __AGG__(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY value DESC LIMIT 6"
   var tplScatter = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND " + f.curCond + " GROUP BY label"
-
   var tplArea = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
+
+  // ── Mandatory filters note for prompt ─────────────────────────────────────
+  var mandatoryPromptNote = mandatoryFilters && mandatoryFilters.length
+    ? '\n## MANDATORY FILTERS (pre-applied to all SQL templates above — DO NOT add them again)\n' +
+      mandatoryFilters.map(function(f) {
+        return '  ' + (f.display_name || f.field) + ' = "' + f.value + '"'
+      }).join('\n')
+    : ''
 
   var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULES: (1) current_value uses ' + f.yf + '=' + f.curYear + ' and comparison_value uses ' + f.yf + '=' + f.cmpYear + ' — DIFFERENT years. (2) For point_in_time KPIs use T-PIT not T-SUM — never sum balance sheet items across months. (3) Use CASE WHEN to split periods. Never use IN. The year field is "' + f.yf + '" and month field is "' + f.mf + '" — always use these exact names.'
 
@@ -706,7 +559,6 @@ export async function POST(request) {
     '## ROLE',
     'You are a senior banking BI analyst. Your job is to design the most insightful dashboard possible.',
     'You have been given REAL DATA ANALYSIS (pre-computed variance scores) to guide your decisions.',
-    'Use this data — do not guess at which dimensions are interesting.',
     '',
     '## DATABASE',
     'Table: dataset_rows | data column is JSONB',
@@ -723,6 +575,7 @@ export async function POST(request) {
     'Current PIT (latest month only): WHERE: ' + f.curCondPIT,
     'Comparison PIT (latest month only): WHERE: ' + f.cmpCondPIT,
     'current year = ' + f.curYear + '  |  comparison year = ' + f.cmpYear,
+    mandatoryPromptNote,
     '',
   ].concat(userContext && (userContext.filters.length || userContext.kpi_focus.length || userContext.intent) ? [
     '## USER CONTEXT (applied to this dashboard)',
@@ -731,142 +584,91 @@ export async function POST(request) {
       ? 'Active filters: ' + userContext.filters.map(function(fi) { return fi.field + ' ' + fi.operator + ' ' + fi.value }).join(', ')
       : '',
     userContext.kpi_focus && userContext.kpi_focus.length
-      ? 'KPI focus fields: ' + userContext.kpi_focus.join(', ') + ' — PRIORITISE these in chart selection and KPI cards. Allocate at least 60% of chart slots to these KPIs and their breakdowns. Other KPIs may still appear but should receive fewer chart slots.'
+      ? 'KPI focus fields: ' + userContext.kpi_focus.join(', ') + ' — PRIORITISE these in chart selection and KPI cards.'
       : '',
     userContext.intent && userContext.intent.type
-      ? 'User intent: ' + userContext.intent.type + ' — ' + (userContext.intent.summary || '') + '. NOTE: Intent-specific queries are appended automatically. Do NOT generate a ranking chart for ' + (userContext.intent.primary_entity || 'the same entity') + '.'
+      ? 'User intent: ' + userContext.intent.type + ' — ' + (userContext.intent.summary || '')
       : '',
     'NOTE: All SQL templates already include the context filter — do NOT add extra WHERE conditions for the filter.',
     '',
   ] : []).concat([
     '## SQL TEMPLATES (replace __FIELD__, __KPI__, __DIM__, __AGG__, __DIST_FIELD__ with actual values)',
-    'T-SUM (KPI card, cumulative — sums across full period): ' + tplSum,
-    'T-PIT (KPI card, point_in_time — single latest month only): ' + tplPIT,
-    'T-AVG (KPI card, legacy average — avoid, use T-PIT instead): ' + tplAvg,
-    'T-COUNT-DISTINCT (KPI card, count distinct at latest month): ' + tplCountDistinct,
+    'T-SUM (KPI card, cumulative): ' + tplSum,
+    'T-PIT (KPI card, point_in_time): ' + tplPIT,
+    'T-AVG (KPI card, legacy average): ' + tplAvg,
+    'T-COUNT-DISTINCT (KPI card, count distinct): ' + tplCountDistinct,
     'T-COUNT-DISTINCT-BAR (bar with count distinct): ' + tplCountDistinctBar,
     'T-BAR (grouped bar, cumulative KPIs): ' + tplBar,
-    'T-BAR-PIT (grouped bar, point_in_time KPIs — as-of month per segment): ' + tplBarPIT,
+    'T-BAR-PIT (grouped bar, point_in_time KPIs): ' + tplBarPIT,
     'T-LINE (trend line): ' + tplLine,
     'T-PIE (pie/donut, cumulative): ' + tplPie,
-    'T-PIE-PIT (pie/donut, point_in_time — as-of month snapshot): ' + tplPiePIT,
+    'T-PIE-PIT (pie/donut, point_in_time): ' + tplPiePIT,
     'T-SCATTER (scatter, cumulative): ' + tplScatter,
-    'T-SCATTER-PIT (scatter, point_in_time — as-of month only): ' + tplScatterPIT,
+    'T-SCATTER-PIT (scatter, point_in_time): ' + tplScatterPIT,
     'T-AREA (area chart): ' + tplArea,
     '',
-    '## ACCUMULATION TYPE — CRITICAL FOR ALL QUERY TYPES',
-    'Check accumulation_type for EVERY query — KPI cards AND charts.',
+    '## ACCUMULATION TYPE — CRITICAL',
     'KPI CARDS: cumulative → T-SUM | point_in_time → T-PIT',
-    'BAR CHARTS: cumulative → T-BAR | point_in_time → T-BAR-PIT (as-of month snapshot per segment)',
+    'BAR CHARTS: cumulative → T-BAR | point_in_time → T-BAR-PIT',
     'PIE/DONUT:  cumulative → T-PIE | point_in_time → T-PIE-PIT',
     'SCATTER:    cumulative → T-SCATTER | point_in_time → T-SCATTER-PIT',
-    'LINE/AREA:  use __AGG__=AVG for point_in_time, SUM for cumulative — each monthly point is naturally a snapshot.',
-    'WRONG: T-BAR for a point_in_time KPI in QTD would mix months — use T-BAR-PIT instead.',
-    'RIGHT: T-BAR-PIT uses the as-of month only, so each bar shows the correct period-end snapshot.',
+    'LINE/AREA:  use __AGG__=AVG for point_in_time, SUM for cumulative.',
     '',
     '## FIELD CATALOGUE',
     'KPI fields: ' + JSON.stringify(fieldList(topKpis)),
     'Derived KPIs: ' + JSON.stringify(fieldList(topDerived)),
     'Dimensions: ' + JSON.stringify(dims.map(function(d) { return { field_name: d.field_name, display_name: d.display_name } })),
     '',
-    '## ACCUMULATION TYPE',
-    'cumulative → SUM | point_in_time → AVG. Check accumulation_type on each field.',
-    '',
     '## FAVORABLE DIRECTION',
-    'Each KPI has a favorable_direction: "i" = increase is good (revenue, income, customers)',
-    '"d" = decrease is good (cost, NPA ratio, expenses, churn).',
-    'Use this when writing the insight field — frame changes correctly.',
-    'E.g. if NPA ratio (d) is rising, the insight should flag this as a risk, not growth.',
+    '"i" = increase is good | "d" = decrease is good. Use when writing insight field.',
     '',
-    '## PRE-ANALYSIS: DATA-DRIVEN VARIANCE SCORES (computed from actual data)',
+    '## PRE-ANALYSIS: DATA-DRIVEN VARIANCE SCORES',
     preAnalysisText,
     '',
     '## YOUR INTELLIGENT DESIGN TASK',
     '',
-    'STEP 1 — KPI Cards (max 8 total, 4 per row × 2 rows):',
-    '  - Generate one kpi card for EACH of the top-priority KPI and derived_kpi fields',
-    '  - Cap at 8 total KPI cards — prioritise by business_priority (High first)',
-    '  - Use T-SUM for cumulative fields',
-    '  - Use T-PIT for point_in_time fields (balance sheet / stock items) — NOT T-SUM',
-    '  - Use T-COUNT-DISTINCT for any field whose calculation_logic contains "Distinct" or aggregation = "COUNT_DISTINCT"',
-    '    Replace __DIST_FIELD__ with the raw field name from the dependencies column',
-    '    Example: # Accounts (dependencies: Account) → __DIST_FIELD__ = Account',
+    'STEP 1 — KPI Cards (max 8 total):',
+    '  - One kpi card per top-priority KPI and derived_kpi field',
+    '  - cumulative → T-SUM | point_in_time → T-PIT | COUNT_DISTINCT → T-COUNT-DISTINCT',
     '',
-    'STEP 2 — Charts (generate 8-12 charts):',
-    '  DIMENSION SELECTION RULES (enforce strictly):',
-    '    - For each KPI, use the dimension with the HIGHEST CV from the pre-analysis above',
-    '    - Only use a dimension with CV < 0.05 if no better option exists',
-    '    - When a top_outlier is present (a segment diverging from peers), call it out in the insight field',
-    '    - Prefer dimensions where the top and worst segments show meaningful divergence',
-    '',
-      '  CHART TYPE RULES:',
-    '    bar         → compare a KPI across categories (use highest-CV dimension)',
-    '                  Use T-BAR for cumulative KPIs, T-BAR-PIT for point_in_time KPIs.',
-    '                  MANDATORY: bar charts MUST include comparison_key: "comparison_value" in the output JSON.',
-    '                  MANDATORY: bar chart SQL MUST include the comparison_value column using the cmpCond.',
-    '                  A bar chart without comparison bars is useless — always show current vs prior.',
-    '    line        → trend over time (best for cumulative flow metrics)',
-    '    area        → trend with visual weight (best for revenue/profit over time)',
-    '    donut       → distribution/share (segment mix, top 5-6 slices)',
-    '    pie         → fewer than 5 categories only',
-    '    stacked_bar → composition over time (e.g. revenue by segment by month)',
-    '    scatter     → correlation between two ratio/rate KPIs',
-    '',
-    '  MANDATORY CHART MIX (strictly enforce):',
-    '  - EXACTLY 2 area or line charts for the top flow KPIs (Revenue, Loans, Deposits or similar)',
-    '  - AT LEAST 1 donut chart showing segment distribution for a top KPI',
+    'STEP 2 — Charts (8-12 charts):',
+    '  - For each KPI use the dimension with HIGHEST CV from pre-analysis',
+    '  - EXACTLY 2 area or line charts for top flow KPIs',
+    '  - AT LEAST 1 donut chart showing segment distribution',
     '  - AT LEAST 1 scatter if two or more ratio/rate KPIs exist',
-    '  - Remaining slots filled with bar charts',
-    '',
-    '  DIMENSION VARIETY RULE (strictly enforce):',
-    '  - NO single dimension may appear in more than 2 bar charts across the entire output',
-    '  - You MUST use at least 3 different dimensions across all bar charts',
-    '  - Use the highest-CV dimension for each KPI individually — do NOT reuse the same dimension for every KPI',
-    '  - Valid dimensions to rotate through: ' + dims.slice(0,8).map(function(d) { return d.field_name }).join(', '),
-    '',
-    '  INSIGHT FIELD RULES:',
-    '    - Always reference the outlier segment when pre-analysis shows one (e.g. "North region is +34% above peer average")',
-    '    - Always mention YoY direction if pre-analysis shows it',
-    '    - Be specific — name actual segments, not generic descriptions',
+    '  - NO single dimension in more than 2 bar charts',
+    '  - bar MUST include comparison_key: "comparison_value"',
     '',
     '## OUTPUT FORMAT — JSON only, no markdown',
     '{',
     '  "queries": [',
     '    {',
     '      "id": "string (snake_case unique)",',
-    '      "title": "string (executive-friendly, e.g. Net Interest Income by Region)",',
+    '      "title": "string",',
     '      "chart_type": "kpi|bar|line|area|pie|donut|stacked_bar|scatter",',
-    '      "sql": "string (complete valid SQL, no placeholders)",',
-    '      "current_key": "current_value (for kpi/bar)",',
-    '      "comparison_key": "comparison_value (for kpi/bar)",',
-    '      "value_key": "value or current_value (main numeric alias)",',
-    '      "label_key": "label or period (category/time alias)",',
-    '      "series_keys": ["array", "for", "stacked_bar", "only"],',
-    '      "x_key": "x_value (scatter only)",',
-    '      "y_key": "y_value (scatter only)",',
-    '      "unit": "USD|%|count|etc",',
-    '      "insight": "one sentence with specific segment names and numbers from pre-analysis",',
+    '      "sql": "string (complete valid SQL)",',
+    '      "current_key": "current_value",',
+    '      "comparison_key": "comparison_value",',
+    '      "value_key": "value or current_value",',
+    '      "label_key": "label or period",',
+    '      "unit": "",',
+    '      "insight": "one sentence with specific segment names",',
     '      "priority": 1',
     '    }',
     '  ]',
     '}',
-    '',
-    'Order by priority: KPI cards first (priority 1-8), then charts by insight value.',
-    'Generate all KPI cards + all charts you deem insightful. Do not artificially limit.',
   ])
 
   var prompt = promptLines.join('\n')
 
   console.log('=== generate-queries: curCond=' + f.curCond)
   console.log('=== generate-queries: cmpCond=' + f.cmpCond)
+  console.log('=== generate-queries: mandatoryFilters=' + mandatoryFilters.length)
 
   try {
     var response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'gpt-4o',
         max_tokens: 6000,
@@ -898,7 +700,6 @@ export async function POST(request) {
 
     queries.sort(function(a, b) { return (a.priority || 99) - (b.priority || 99) })
 
-    // Append intent-specific bonus queries
     var intent = userContext && userContext.intent ? userContext.intent : null
     if (intent && intent.type && intent.type !== 'null') {
       var intentQueries = buildIntentQueries(intent, datasetId, f, CF, metaRows)
@@ -910,28 +711,22 @@ export async function POST(request) {
 
     var usage = json.usage || {}
 
-    // Build coverage data — summarises every decision made so CoveragePanel can explain them
-    var generatedKpiIds  = new Set(queries.filter(function(q) { return q.chart_type === 'kpi' }).map(function(q) { return q.id }))
-    var generatedChartSignatures = new Set(queries.filter(function(q) { return q.chart_type !== 'kpi' }).map(function(q) { return q.title }))
-
     var allKpis = metaRows.filter(function(m) { return (m.type === 'kpi' || m.type === 'derived_kpi') && m.is_output !== 'N' })
     var kpiCoverage = allKpis.map(function(m) {
       var inTopKpis  = topKpis.concat(topDerived).some(function(k) { return k.field_name === m.field_name })
       var hasKpiCard = queries.some(function(q) { return q.chart_type === 'kpi' && (q.id === m.field_name || (q.title || '').toLowerCase().includes((m.display_name || '').toLowerCase())) })
-      var reason = hasKpiCard ? 'shown'
-        : !inTopKpis         ? 'not_in_topkpis'
-        :                      'cap_hit'
+      var reason = hasKpiCard ? 'shown' : !inTopKpis ? 'not_in_topkpis' : 'cap_hit'
       return { field_name: m.field_name, display_name: m.display_name, type: m.type, business_priority: m.business_priority, accumulation_type: m.accumulation_type, aggregation: m.aggregation, reason }
     })
 
     var dimCoverage = preAnalysis.map(function(r) {
-      var cvNum = parseFloat(r.cv) || 0
+      var cvNum   = parseFloat(r.cv) || 0
       var charted = queries.some(function(q) {
         return q.chart_type !== 'kpi' && q.sql && q.sql.indexOf("'" + r.kpi_field + "'") >= 0 && q.sql.indexOf("'" + r.dim_field + "'") >= 0
       })
       return {
         kpi_field: r.kpi_field, kpi_display: r.kpi_display,
-        dim_field:  r.dim_field,  dim_display:  r.dim_display,
+        dim_field: r.dim_field, dim_display: r.dim_display,
         cv: r.cv, cv_label: r.cv_label,
         top_segment: r.top_segment, top_outlier: r.top_outlier,
         charted,
@@ -941,13 +736,13 @@ export async function POST(request) {
 
     return Response.json({
       queries,
-      model:       'gpt-4o',
-      metadata:    metaRows,
+      model:      'gpt-4o',
+      metadata:   metaRows,
       timePeriod,
-     periodInfo:  { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel, yf: f.yf, mf: f.mf, curYear: f.curYear, curCond: f.curCond },
+      periodInfo: { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel, yf: f.yf, mf: f.mf, curYear: f.curYear, curCond: f.curCond },
       preAnalysis,
       coverageData: { kpiCoverage, dimCoverage, kpiCapUsed: kpiCoverage.filter(function(k) { return k.reason === 'shown' }).length, kpiCapMax: 8 },
-      usage:       { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' },
+      usage: { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' },
     })
   } catch (err) {
     console.error('generate-queries error:', err.message)
