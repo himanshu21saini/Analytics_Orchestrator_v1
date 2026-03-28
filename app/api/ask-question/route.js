@@ -129,6 +129,7 @@ export async function POST(request) {
     '## SQL RULES',
     '1. All field access is direct column name — SELECT branch_name, SUM(revenue). NO data->>\'\' syntax ever.',
     '2. Numeric columns are already NUMERIC — no ::numeric casting needed.',
+   '2b. For columns with data_type "Integer" or "Float", NEVER filter with string values like "yes", "true", "Y", "active". Always use numeric values: 1 for true/active/present, 0 for false/inactive/absent.',
     '3. Every query must include WHERE ' + periodConds.cond + CF,
     '4. Use aggregation from catalogue (SUM for cumulative, AVG for point_in_time).',
     '5. For ranking: ORDER BY value DESC LIMIT 10.',
