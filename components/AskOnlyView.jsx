@@ -328,7 +328,10 @@ export default function AskOnlyView({ session }) {
                 {ans.queries.filter(function(q) { return !!q.error }).map(function(q, i) {
                   return <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}><p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>{q.title}: {q.error}</p></div>
                 })}
-
+                 {/* Query Inspector */}
+                {ans.queries && ans.queries.length > 0 && (
+                  <QueryInspector queries={ans.queries} />
+                )}
                 {/* Narrative */}
                 {ans.narrative && (
                   <div style={{ padding: '16px 20px' }}>
