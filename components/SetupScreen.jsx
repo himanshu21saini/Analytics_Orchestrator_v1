@@ -29,7 +29,8 @@ function detectPeriodPairs(ymRows) {
       pairs.push({
         label: (prefix || 'Default') + ' period',
         yearField: yRow.field_name, monthField: mRow.field_name,
-        yearDisplay: yRow.display_name || yRow.field_name, monthDisplay: mRow.display_name || mRow.field_name,
+        yearDisplay: yRow.display_name || yRow.field_name,
+        monthDisplay: mRow.display_name || mRow.field_name,
       })
     }
   })
@@ -50,11 +51,13 @@ for (var si = 23; si >= 0; si--) {
 }
 var SLIDER_DEFAULT = SLIDER_MONTHS.length - 1
 
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 function ProdChip({ active, onClick, children, amber }) {
   return (
     <button onClick={onClick} style={{
-      padding: '5px 14px', borderRadius: 'var(--radius-sm)', fontSize: 11, fontWeight: 500, cursor: 'pointer',
-      fontFamily: 'var(--font-body)', letterSpacing: '0.06em',
+      padding: '5px 14px', borderRadius: 'var(--radius-sm)', fontSize: 11, fontWeight: 500,
+      cursor: 'pointer', fontFamily: 'var(--font-body)', letterSpacing: '0.06em',
       border: '1px solid ' + (active ? (amber ? 'rgba(240,160,48,0.5)' : 'var(--accent-border)') : 'var(--border)'),
       background: active ? (amber ? 'rgba(240,160,48,0.12)' : 'var(--accent-dim)') : 'transparent',
       color: active ? (amber ? '#F0A030' : 'var(--text-accent)') : 'var(--text-secondary)',
@@ -67,7 +70,11 @@ function ProdChip({ active, onClick, children, amber }) {
 
 function SectionCard({ n, title, children }) {
   return (
-    <div style={{ background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px 22px', position: 'relative', overflow: 'hidden', marginBottom: 12 }}>
+    <div style={{
+      background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+      padding: '20px 22px', position: 'relative', overflow: 'hidden', marginBottom: 12,
+    }}>
       <div style={{ position: 'absolute', top: 8, left: 8, width: 12, height: 12, borderTop: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', borderRadius: '2px 0 0 0', opacity: 0.6 }} />
       <div style={{ position: 'absolute', top: 8, right: 8, width: 12, height: 12, borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', borderRadius: '0 2px 0 0', opacity: 0.6 }} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.2 }} />
@@ -87,8 +94,23 @@ function AutoGenButton({ state, onGenerate, disabled, compact }) {
   return (
     <button onClick={onGenerate} disabled={disabled || isLoading}
       title={disabled ? 'Select a dataset first' : isDone ? 'Re-generate metadata' : 'Auto-generate metadata from your dataset'}
-      style={{ display: 'flex', alignItems: 'center', gap: compact ? 0 : 6, padding: compact ? '3px 8px' : '4px 10px', borderRadius: 'var(--radius-sm)', fontSize: 10, fontWeight: 500, cursor: disabled || isLoading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', letterSpacing: '0.04em', border: '1px solid ' + (disabled ? 'var(--border)' : isDone ? 'rgba(16,196,138,0.4)' : 'var(--accent-border)'), background: disabled ? 'transparent' : isDone ? 'rgba(16,196,138,0.08)' : 'var(--accent-dim)', color: disabled ? 'var(--text-tertiary)' : isDone ? '#10C48A' : 'var(--text-accent)', transition: 'all var(--transition)', whiteSpace: 'nowrap' }}>
-      {isLoading ? <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5, flexShrink: 0 }} /> : <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}><path d="M5 1v2M5 7v2M1 5h2M7 5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="5" cy="5" r="2" stroke="currentColor" strokeWidth="1.3"/></svg>}
+      style={{
+        display: 'flex', alignItems: 'center', gap: compact ? 0 : 6,
+        padding: compact ? '3px 8px' : '4px 10px', borderRadius: 'var(--radius-sm)',
+        fontSize: 10, fontWeight: 500, cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+        fontFamily: 'var(--font-body)', letterSpacing: '0.04em',
+        border: '1px solid ' + (disabled ? 'var(--border)' : isDone ? 'rgba(16,196,138,0.4)' : 'var(--accent-border)'),
+        background: disabled ? 'transparent' : isDone ? 'rgba(16,196,138,0.08)' : 'var(--accent-dim)',
+        color: disabled ? 'var(--text-tertiary)' : isDone ? '#10C48A' : 'var(--text-accent)',
+        transition: 'all var(--transition)', whiteSpace: 'nowrap',
+      }}>
+      {isLoading
+        ? <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5, flexShrink: 0 }} />
+        : <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M5 1v2M5 7v2M1 5h2M7 5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            <circle cx="5" cy="5" r="2" stroke="currentColor" strokeWidth="1.3"/>
+          </svg>
+      }
       {!compact && <span style={{ marginLeft: 4 }}>{isLoading ? 'Generating...' : isDone ? 'Re-generate' : 'Auto-generate'}</span>}
     </button>
   )
@@ -96,14 +118,24 @@ function AutoGenButton({ state, onGenerate, disabled, compact }) {
 
 function AutoGenResult({ result }) {
   return (
-    <div className="fade-in" style={{ marginTop: 10, padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: result.flaggedCount > 0 ? 'rgba(240,160,48,0.06)' : 'rgba(16,196,138,0.06)', border: '1px solid ' + (result.flaggedCount > 0 ? 'rgba(240,160,48,0.25)' : 'rgba(16,196,138,0.25)') }}>
+    <div className="fade-in" style={{
+      marginTop: 10, padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+      background: result.flaggedCount > 0 ? 'rgba(240,160,48,0.06)' : 'rgba(16,196,138,0.06)',
+      border: '1px solid ' + (result.flaggedCount > 0 ? 'rgba(240,160,48,0.25)' : 'rgba(16,196,138,0.25)'),
+    }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <span style={{ fontSize: 13, flexShrink: 0 }}>{result.flaggedCount > 0 ? '⚠' : '✓'}</span>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 12, fontWeight: 500, color: result.flaggedCount > 0 ? 'var(--amber-text)' : 'var(--green-text)', fontFamily: 'var(--font-body)', marginBottom: 4 }}>{result.fieldCount} fields generated · {result.filename} downloaded</p>
+          <p style={{ fontSize: 12, fontWeight: 500, color: result.flaggedCount > 0 ? 'var(--amber-text)' : 'var(--green-text)', fontFamily: 'var(--font-body)', marginBottom: 4 }}>
+            {result.fieldCount} fields generated · {result.filename} downloaded
+          </p>
           {result.flaggedCount > 0
-            ? <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}><strong style={{ color: 'var(--amber-text)' }}>{result.flaggedCount} {result.flaggedCount === 1 ? 'field needs' : 'fields need'} review</strong> — check the Review Summary tab, fix flagged rows, then re-upload.</p>
-            : <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>All fields classified. Delete the <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>confidence</code> and <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>review_notes</code> columns before re-uploading.</p>
+            ? <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                <strong style={{ color: 'var(--amber-text)' }}>{result.flaggedCount} {result.flaggedCount === 1 ? 'field needs' : 'fields need'} review</strong> — check the Review Summary tab, fix flagged rows, then re-upload.
+              </p>
+            : <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                All fields classified. Delete the <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>confidence</code> and <code style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>review_notes</code> columns before re-uploading.
+              </p>
           }
         </div>
       </div>
@@ -111,6 +143,7 @@ function AutoGenResult({ result }) {
   )
 }
 
+// ── VapiHelpWidget ────────────────────────────────────────────────────────────
 var VAPI_PUBLIC_KEY   = process.env.NEXT_PUBLIC_VAPI_KEY
 var VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
 
@@ -122,7 +155,6 @@ function VapiHelpWidget() {
   var [vapiInst,   setVapiInst]   = useState(null)
   var [volume,     setVolume]     = useState(0)
   var [errorMsg,   setErrorMsg]   = useState('')
-  var [savingMeta, setSavingMeta] = useState(false)
 
   async function getVapi() {
     if (vapiInst) return vapiInst
@@ -132,7 +164,11 @@ function VapiHelpWidget() {
       inst.on('call-end',     function()  { setCallState('ended');  setVolume(0) })
       inst.on('volume-level', function(v) { setVolume(v) })
       inst.on('error',        function(e) { console.error('VAPI error:', e); setErrorMsg('Connection error — please try again.'); setCallState('idle') })
-      inst.on('message', function(msg) { if (msg && msg.type === 'transcript' && msg.transcriptType === 'final') { setTranscript(function(prev) { return prev.concat({ role: msg.role, text: msg.transcript }).slice(-6) }) } })
+      inst.on('message', function(msg) {
+        if (msg && msg.type === 'transcript' && msg.transcriptType === 'final') {
+          setTranscript(function(prev) { return prev.concat({ role: msg.role, text: msg.transcript }).slice(-6) })
+        }
+      })
       setVapiInst(inst); return inst
     } catch (err) { setErrorMsg('Could not load voice SDK.'); setCallState('idle'); return null }
   }
@@ -150,7 +186,13 @@ function VapiHelpWidget() {
 
   function VolumeBar() {
     var segs = 5; var lit = Math.round(volume * segs)
-    return <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>{Array.from({ length: segs }).map(function(_, i) { return <div key={i} style={{ width: 3, height: 6 + i * 3, borderRadius: 2, background: i < lit ? 'var(--accent)' : 'var(--surface-3)', transition: 'background 80ms' }} /> })}</div>
+    return (
+      <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+        {Array.from({ length: segs }).map(function(_, i) {
+          return <div key={i} style={{ width: 3, height: 6 + i * 3, borderRadius: 2, background: i < lit ? 'var(--accent)' : 'var(--surface-3)', transition: 'background 80ms' }} />
+        })}
+      </div>
+    )
   }
 
   return (
@@ -159,22 +201,41 @@ function VapiHelpWidget() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           <button onClick={function() { setExpanded(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px' }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="0.5" width="4" height="6.5" rx="2" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.2"/><path d="M2 6a4 4 0 0 0 8 0" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" fill="none"/><line x1="6" y1="10" x2="6" y2="11.5" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <rect x="4" y="0.5" width="4" height="6.5" rx="2" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.2"/>
+              <path d="M2 6a4 4 0 0 0 8 0" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+              <line x1="6" y1="10" x2="6" y2="11.5" stroke="var(--text-tertiary)" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
             <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Not sure where to start?</span>
           </button>
           <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
         </div>
       ) : (
-        <div className="fade-in" style={{ background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid ' + (callState === 'active' ? 'var(--accent-border)' : 'var(--border)'), borderRadius: 'var(--radius-lg)', padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
+        <div className="fade-in" style={{
+          background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+          border: '1px solid ' + (callState === 'active' ? 'var(--accent-border)' : 'var(--border)'),
+          borderRadius: 'var(--radius-lg)', padding: '18px 20px', position: 'relative', overflow: 'hidden',
+        }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: callState === 'active' ? 0.5 : 0.2 }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: callState === 'active' ? 'rgba(0,200,240,0.15)' : 'var(--accent-dim)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                {callState === 'connecting' ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5 }} /> : <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="0.5" width="5" height="8" rx="2.5" fill={callState === 'active' ? 'rgba(0,200,240,0.25)' : 'rgba(0,200,240,0.15)'} stroke="var(--accent)" strokeWidth="1.2"/><path d="M2 7a5 5 0 0 0 10 0" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" fill="none"/><line x1="7" y1="12" x2="7" y2="13.5" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round"/></svg>}
+                {callState === 'connecting'
+                  ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5 }} />
+                  : <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <rect x="4.5" y="0.5" width="5" height="8" rx="2.5" fill={callState === 'active' ? 'rgba(0,200,240,0.25)' : 'rgba(0,200,240,0.15)'} stroke="var(--accent)" strokeWidth="1.2"/>
+                      <path d="M2 7a5 5 0 0 0 10 0" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+                      <line x1="7" y1="12" x2="7" y2="13.5" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round"/>
+                    </svg>
+                }
               </div>
               <div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{callState === 'idle' ? 'Need help getting started?' : callState === 'connecting' ? 'Connecting...' : callState === 'active' ? 'Call in progress' : 'Call ended'}</p>
-                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 1 }}>{callState === 'idle' ? 'Talk to our voice assistant · Available 24/7' : callState === 'connecting' ? 'Please wait...' : callState === 'active' ? 'Speak clearly · Browser mic is active' : 'Thanks for calling'}</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+                  {callState === 'idle' ? 'Need help getting started?' : callState === 'connecting' ? 'Connecting...' : callState === 'active' ? 'Call in progress' : 'Call ended'}
+                </p>
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 1 }}>
+                  {callState === 'idle' ? 'Talk to our voice assistant · Available 24/7' : callState === 'connecting' ? 'Please wait...' : callState === 'active' ? 'Speak clearly · Browser mic is active' : 'Thanks for calling'}
+                </p>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -184,12 +245,22 @@ function VapiHelpWidget() {
           </div>
           {callState === 'idle' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-              {['How to format metadata','Choosing the right time period','Understanding KPI types','Reading the dashboard'].map(function(t) { return <span key={t} style={{ fontSize: 10, padding: '3px 9px', borderRadius: 99, background: 'var(--surface-3)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{t}</span> })}
+              {['How to format metadata','Choosing the right time period','Understanding KPI types','Reading the dashboard'].map(function(t) {
+                return <span key={t} style={{ fontSize: 10, padding: '3px 9px', borderRadius: 99, background: 'var(--surface-3)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{t}</span>
+              })}
             </div>
           )}
           {callState === 'active' && transcript.length > 0 && (
             <div style={{ marginBottom: 14, padding: '10px 12px', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', maxHeight: 120, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {transcript.map(function(line, i) { var isUser = line.role === 'user'; return <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0, marginTop: 1, color: isUser ? 'var(--text-accent)' : 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', width: 28 }}>{isUser ? 'You' : 'AI'}</span><span style={{ fontSize: 11, color: isUser ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{line.text}</span></div> })}
+              {transcript.map(function(line, i) {
+                var isUser = line.role === 'user'
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0, marginTop: 1, color: isUser ? 'var(--text-accent)' : 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', width: 28 }}>{isUser ? 'You' : 'AI'}</span>
+                    <span style={{ fontSize: 11, color: isUser ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{line.text}</span>
+                  </div>
+                )
+              })}
             </div>
           )}
           {errorMsg && <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '7px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>{errorMsg}</p>}
@@ -249,9 +320,13 @@ export default function SetupScreen({ onReady }) {
   var [extracted,    setExtracted]    = useState(null)
   var [showConfirm,  setShowConfirm]  = useState(false)
   var contextRef = useRef()
-  var dataRef = useRef(); var metaRef = useRef()
+  var dataRef    = useRef()
+  var metaRef    = useRef()
   var [autoGenState,  setAutoGenState]  = useState('idle')
   var [autoGenResult, setAutoGenResult] = useState(null)
+  var [savingMeta,    setSavingMeta]    = useState(false)
+
+  // ── Mandatory filters ────────────────────────────────────────────────────
   var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])
   var [mandatoryFilterValues, setMandatoryFilterValues] = useState({})
 
@@ -261,6 +336,7 @@ export default function SetupScreen({ onReady }) {
   var allowedComp = COMPARISON_OPTIONS[viewType] || []
   var activePair  = periodPairs[selPairIdx] || periodPairs[0]
 
+  // ── Splash ───────────────────────────────────────────────────────────────
   useEffect(function() {
     if (step !== 0) return
     var t = setTimeout(function() { setSplashOut(true); setTimeout(function() { setStep(1) }, 350) }, 2000)
@@ -275,6 +351,7 @@ export default function SetupScreen({ onReady }) {
     if (!valid && allowed.length > 0) setCompType(allowed[0].value)
   }, [viewType])
 
+  // ── Load period pairs + mandatory filters whenever selMeta changes ────────
   useEffect(function() {
     var metaId = metaMode === 'existing' ? selMeta : null
     if (!metaId) { setPeriodPairs([]); setSelPairIdx(0); setMandatoryFilterFields([]); setMandatoryFilterValues({}); return }
@@ -283,9 +360,8 @@ export default function SetupScreen({ onReady }) {
       .then(function(j) {
         var fields = j.fields || []
         // Period pairs
-        var ymFields = fields.filter(function(f) { return f.type === 'year_month' })
-        var pairs    = detectPeriodPairs(ymFields)
-        setPeriodPairs(pairs); setSelPairIdx(0)
+        setPeriodPairs(detectPeriodPairs(fields.filter(function(f) { return f.type === 'year_month' })))
+        setSelPairIdx(0)
         // Mandatory filters
         var mFields = fields.filter(function(f) { return f.mandatory_filter_value && String(f.mandatory_filter_value).trim() })
         setMandatoryFilterFields(mFields)
@@ -313,30 +389,70 @@ export default function SetupScreen({ onReady }) {
     setLoadingLists(false)
   }
 
+  // ── Save metadata separately (before Generate Intelligence) ───────────────
+  // This is a dedicated step so mandatory filters are loaded BEFORE doBuild runs.
+  async function handleSaveMetadata() {
+    if (!metaFile) return
+    setSavingMeta(true); setError('')
+    try {
+      var mf2 = new FormData()
+      mf2.append('file', metaFile)
+      mf2.append('name', metaName || metaFile.name)
+      var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 })
+      var mj = await mr.json()
+      if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
+      var savedMetaId = String(mj.metadataSet.id)
+      await loadLists()
+      setSelMeta(savedMetaId)   // triggers useEffect → loads mandatory filters
+      setMetaMode('existing')   // switches to existing mode showing the saved set
+      setMetaFile(null)
+    } catch(err) { setError('Metadata save failed: ' + err.message) }
+    setSavingMeta(false)
+  }
+
   async function uploadDatasetChunked(file, name) {
     var XLSX = (await import('xlsx')).default || (await import('xlsx'))
     var arrayBuffer = await new Promise(function(resolve, reject) {
-      var reader = new FileReader(); reader.onload = function(e) { resolve(e.target.result) }; reader.onerror = function() { reject(new Error('Failed to read file')) }; reader.readAsArrayBuffer(file)
+      var reader = new FileReader()
+      reader.onload  = function(e) { resolve(e.target.result) }
+      reader.onerror = function()  { reject(new Error('Failed to read file')) }
+      reader.readAsArrayBuffer(file)
     })
     var buffer = new Uint8Array(arrayBuffer)
-    var wb = file.name.toLowerCase().endsWith('.csv') ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' }) : XLSX.read(buffer, { type: 'array' })
+    var wb = file.name.toLowerCase().endsWith('.csv')
+      ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' })
+      : XLSX.read(buffer, { type: 'array' })
     var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: false, dateNF: 'yyyy-mm-dd' })
     if (!rows.length) throw new Error('File is empty.')
-       setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
-   var initRes = await fetch('/api/upload-dataset', {
-     method: 'POST', headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ action: 'init', name: name, rowCount: rows.length, sampleRows: rows.slice(0, 20) })
-   })
-    var initJson = await initRes.json(); if (!initRes.ok) throw new Error(initJson.error || 'Dataset init failed.')
-    var datasetId = initJson.datasetId; var CHUNK = 1000; var total = rows.length; var chunks = Math.ceil(total / CHUNK)
+
+    setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
+    // Send first 20 rows as sample for type inference
+    var initRes = await fetch('/api/upload-dataset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'init', name: name, rowCount: rows.length, sampleRows: rows.slice(0, 20) }),
+    })
+    var initJson = await initRes.json()
+    if (!initRes.ok) throw new Error(initJson.error || 'Dataset init failed.')
+    var datasetId = initJson.datasetId
+
+    var CHUNK = 1000; var total = rows.length; var chunks = Math.ceil(total / CHUNK)
     for (var c = 0; c < chunks; c++) {
       setProgress('Uploading ' + Math.min((c + 1) * CHUNK, total).toLocaleString() + ' / ' + total.toLocaleString() + ' rows...')
-      var chunkRes = await fetch('/api/upload-dataset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chunk', datasetId: datasetId, rows: rows.slice(c * CHUNK, (c + 1) * CHUNK) }) })
-      var chunkJson = await chunkRes.json(); if (!chunkRes.ok) throw new Error(chunkJson.error || 'Chunk upload failed at batch ' + (c + 1))
+      var chunkRes  = await fetch('/api/upload-dataset', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'chunk', datasetId: datasetId, rows: rows.slice(c * CHUNK, (c + 1) * CHUNK) }),
+      })
+      var chunkJson = await chunkRes.json()
+      if (!chunkRes.ok) throw new Error(chunkJson.error || 'Chunk upload failed at batch ' + (c + 1))
     }
+
     setProgress('Finalising...')
-    var finalRes = await fetch('/api/upload-dataset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'finalise', datasetId: datasetId, name: name, rowCount: total }) })
-    var finalJson = await finalRes.json(); if (!finalRes.ok) throw new Error(finalJson.error || 'Finalise failed.')
+    var finalRes  = await fetch('/api/upload-dataset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'finalise', datasetId: datasetId, name: name, rowCount: total }),
+    })
+    var finalJson = await finalRes.json()
+    if (!finalRes.ok) throw new Error(finalJson.error || 'Finalise failed.')
     return finalJson.dataset
   }
 
@@ -346,29 +462,19 @@ export default function SetupScreen({ onReady }) {
     setAutoGenState('loading'); setAutoGenResult(null)
     try {
       var res  = await fetch('/api/generate-metadata', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: dsId }) })
-      var json = await res.json(); if (!res.ok) throw new Error(json.error || 'Generation failed.')
+      var json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Generation failed.')
       var bytes = Uint8Array.from(atob(json.base64), function(c) { return c.charCodeAt(0) })
       var blob  = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      var url   = URL.createObjectURL(blob); var link = document.createElement('a')
-      link.href = url; link.download = json.filename; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url)
-      setAutoGenResult({ fieldCount: json.fieldCount, flaggedCount: json.flaggedCount, filename: json.filename }); setAutoGenState('done')
+      var url   = URL.createObjectURL(blob)
+      var link  = document.createElement('a')
+      link.href = url; link.download = json.filename
+      document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url)
+      setAutoGenResult({ fieldCount: json.fieldCount, flaggedCount: json.flaggedCount, filename: json.filename })
+      setAutoGenState('done')
     } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
   }
 
-  async function handleSaveMetadata() {
-  if (!metaFile) return
-  setSavingMeta(true); setError('')
-  try {
-    var mf2 = new FormData(); mf2.append('file', metaFile); mf2.append('name', metaName || metaFile.name)
-    var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 }); var mj = await mr.json()
-    if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
-    var savedMetaId = String(mj.metadataSet.id)
-    await loadLists()
-    setSelMeta(savedMetaId)
-    setMetaMode('existing')
-  } catch(err) { setError('Metadata save failed: ' + err.message) }
-  setSavingMeta(false)
-}
   async function handleBuild() {
     setError('')
     var contextText = (contextRef.current && contextRef.current.value) || ''
@@ -390,49 +496,20 @@ export default function SetupScreen({ onReady }) {
     setShowConfirm(false); setError(''); setWorking(true)
     var finalDatasetId = selDataset; var finalMetaId = selMeta
     try {
+      // ── Upload dataset if needed ───────────────────────────────────────
       if (dataMode === 'upload') {
         if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
         var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
         finalDatasetId = String(dataset.id); await loadLists()
       }
 
-      // ── Refresh mandatory filters after upload using finalMetaId ─────────
+      // ── Metadata must already be saved (via Save Metadata button) ──────
+      // metaMode === 'upload' with unsaved file is blocked below
       if (metaMode === 'upload') {
-        try {
-          var mfRes2  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId)
-          var mfJson2 = await mfRes2.json()
-          var mFields = (mfJson2.fields || []).filter(function(f) {
-            return f.mandatory_filter_value && String(f.mandatory_filter_value).trim()
-          })
-          setMandatoryFilterFields(mFields)
-          var defaults = {}
-          mFields.forEach(function(f) { defaults[f.field_name] = String(f.mandatory_filter_value).trim() })
-          setMandatoryFilterValues(defaults)
-          // Use freshly loaded values for this build
-           // ── Build mandatory filters — re-fetch if metadata was just uploaded ──
-      var currentMandatoryFields = mandatoryFilterFields
-      var currentMandatoryValues = mandatoryFilterValues
-      if (metaMode === 'upload') {
-        try {
-          var mfRes2  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId)
-          var mfJson2 = await mfRes2.json()
-          currentMandatoryFields = (mfJson2.fields || []).filter(function(f) {
-            return f.mandatory_filter_value && String(f.mandatory_filter_value).trim()
-          })
-          currentMandatoryValues = {}
-          currentMandatoryFields.forEach(function(f) {
-            currentMandatoryValues[f.field_name] = String(f.mandatory_filter_value).trim()
-          })
-          setMandatoryFilterFields(currentMandatoryFields)
-          setMandatoryFilterValues(currentMandatoryValues)
-        } catch(e) { console.warn('Could not load mandatory filters after upload:', e.message) }
+        setError('Please save your metadata file first using the "Save Metadata" button before generating.')
+        setWorking(false); return
       }
 
-      var mandatoryFilters = currentMandatoryFields.map(function(f) {
-        return { field: f.field_name, value: currentMandatoryValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
-      })
-        } catch(e) { console.warn('Could not refresh mandatory filters:', e.message) }
-      }
       // ── Resolve period pairs fresh at build time (fixes race condition) ─
       var activePairs = periodPairs
       if (!activePairs.length) {
@@ -440,8 +517,8 @@ export default function SetupScreen({ onReady }) {
           var pairRes  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId)
           var pairJson = await pairRes.json()
           var allFields = pairJson.fields || []
-          activePairs  = detectPeriodPairs(allFields.filter(function(f) { return f.type === 'year_month' }))
-          // Also refresh mandatory filters if they weren't loaded yet
+          activePairs = detectPeriodPairs(allFields.filter(function(f) { return f.type === 'year_month' }))
+          // Also load mandatory filters if not yet loaded
           if (!mandatoryFilterFields.length) {
             var mFields = allFields.filter(function(f) { return f.mandatory_filter_value && String(f.mandatory_filter_value).trim() })
             setMandatoryFilterFields(mFields)
@@ -453,39 +530,81 @@ export default function SetupScreen({ onReady }) {
       if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
       var chosenPair = activePairs[selPairIdx] || activePairs[0]
 
-      // ── Build mandatory filters array ────────────────────────────────
+      // ── Build mandatory filters from current state ─────────────────────
       var mandatoryFilters = mandatoryFilterFields.map(function(f) {
-        return { field: f.field_name, value: mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
+        return {
+          field:        f.field_name,
+          value:        mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(),
+          display_name: f.display_name || f.field_name,
+        }
       })
 
       setProgress('Composing intelligence queries...')
-      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
-      var gqRes = await fetch('/api/generate-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod, userContext: userContext || null, mandatoryFilters }) })
-      var gqJson = await gqRes.json(); if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
-      setProgress('Executing ' + (gqJson.queries ? gqJson.queries.length : '') + ' queries...')
-      var rqRes = await fetch('/api/run-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queries: gqJson.queries }) })
-      var rqJson = await rqRes.json(); if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
+      var timePeriod = {
+        viewType, year: selYear, month: selMonth,
+        comparisonType: compType,
+        yearField: chosenPair.yearField,
+        monthField: chosenPair.monthField,
+      }
 
-      onReady({ datasetId: finalDatasetId, metadataSetId: finalMetaId, queries: gqJson.queries, queryResults: rqJson.results, metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo, initialUsage: gqJson.usage || null, userContext: userContext || null, coverageData: gqJson.coverageData || null, preferences: prefs, mandatoryFilters })
+      var gqRes = await fetch('/api/generate-queries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod, userContext: userContext || null, mandatoryFilters }),
+      })
+      var gqJson = await gqRes.json()
+      if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
+
+      setProgress('Executing ' + (gqJson.queries ? gqJson.queries.length : '') + ' queries...')
+      var rqRes = await fetch('/api/run-queries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queries: gqJson.queries }),
+      })
+      var rqJson = await rqRes.json()
+      if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
+
+      onReady({
+        datasetId: finalDatasetId, metadataSetId: finalMetaId,
+        queries: gqJson.queries, queryResults: rqJson.results,
+        metadata: gqJson.metadata, timePeriod,
+        periodInfo: gqJson.periodInfo,
+        initialUsage: gqJson.usage || null,
+        userContext: userContext || null,
+        coverageData: gqJson.coverageData || null,
+        preferences: prefs,
+        mandatoryFilters,
+      })
     } catch(err) { setError(err.message); setWorking(false); setProgress('') }
   }
 
-  // ── Splash ────────────────────────────────────────────────────────────────
+  // ── Splash screen ─────────────────────────────────────────────────────────
   if (step === 0) {
     return (
       <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-        <div style={{ width: '100%', maxWidth: 900, height: 'calc(65vh)', minHeight: 420, background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', backdropFilter: 'blur(12px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', transition: 'opacity 0.35s ease, transform 0.35s ease', opacity: splashOut ? 0 : 1, transform: splashOut ? 'scale(0.97)' : 'scale(1)' }}>
+        <div style={{
+          width: '100%', maxWidth: 900, height: 'calc(65vh)', minHeight: 420,
+          background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+          border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+          backdropFilter: 'blur(12px)', position: 'relative', overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          transition: 'opacity 0.35s ease, transform 0.35s ease',
+          opacity: splashOut ? 0 : 1, transform: splashOut ? 'scale(0.97)' : 'scale(1)',
+        }}>
           <div style={{ position: 'absolute', top: 16, left: 16, width: 20, height: 20, borderTop: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', opacity: 0.7 }} />
           <div style={{ position: 'absolute', top: 16, right: 16, width: 20, height: 20, borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', opacity: 0.7 }} />
           <div style={{ position: 'absolute', bottom: 16, left: 16, width: 20, height: 20, borderBottom: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', opacity: 0.7 }} />
           <div style={{ position: 'absolute', bottom: 16, right: 16, width: 20, height: 20, borderBottom: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', opacity: 0.7 }} />
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)' }} />
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, marginBottom: 32 }}>
-            {[22, 14, 30, 14, 22].map(function(h, i) { return <div key={i} style={{ width: 5, height: h, background: i === 2 ? 'var(--accent)' : 'rgba(0,200,240,0.35)', borderRadius: 3 }} /> })}
+            {[22, 14, 30, 14, 22].map(function(h, i) {
+              return <div key={i} style={{ width: 5, height: h, background: i === 2 ? 'var(--accent)' : 'rgba(0,200,240,0.35)', borderRadius: 3 }} />
+            })}
           </div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 52, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginBottom: 12, textAlign: 'center' }}>{APP_NAME}</h1>
           <p style={{ fontSize: 12, color: 'var(--text-accent)', letterSpacing: '0.22em', textTransform: 'uppercase', fontFamily: 'var(--font-body)', marginBottom: 48 }}>{APP_TAGLINE}</p>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><span className="spinner" style={{ opacity: 0.5 }} /><span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', letterSpacing: '0.08em' }}>Initialising</span></div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="spinner" style={{ opacity: 0.5 }} />
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', letterSpacing: '0.08em' }}>Initialising</span>
+          </div>
         </div>
       </div>
     )
@@ -497,28 +616,36 @@ export default function SetupScreen({ onReady }) {
 
   return (
     <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '36px 24px 60px' }}>
+
       <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 36 }}>
         <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15, color: 'var(--text-primary)', marginBottom: 12 }}>Configure Intelligence</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, fontFamily: 'var(--font-body)' }}>Select your data sources, time horizon and context. The AI agent composes your intelligence.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, fontFamily: 'var(--font-body)' }}>Select your data sources, time horizon and context.</p>
       </div>
 
       <div style={{ width: '100%', maxWidth: 1200, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
 
-        {/* LEFT: Data + Time Period + Data Filters */}
+        {/* ── LEFT CARD ─────────────────────────────────────────────────── */}
         <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
 
+          {/* Section 1: Data */}
           <SectionCard n="1" title="Data">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Main data file — .xlsx, .xls or .csv</p>
+
+            {/* Dataset */}
             <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Dataset</p>
             {!loadingLists && datasets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
-                {['existing','upload'].map(function(m) { return <button key={m} onClick={function(){setDataMode(m)}} style={{ padding: '3px 9px', fontSize: 10, cursor: 'pointer', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (dataMode===m?'var(--accent-border)':'var(--border)'), background: dataMode===m?'var(--accent-dim)':'transparent', color: dataMode===m?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{m==='existing'?'Existing':'Upload new'}</button> })}
+                {['existing','upload'].map(function(m) {
+                  return <button key={m} onClick={function(){setDataMode(m)}} style={{ padding: '3px 9px', fontSize: 10, cursor: 'pointer', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (dataMode===m?'var(--accent-border)':'var(--border)'), background: dataMode===m?'var(--accent-dim)':'transparent', color: dataMode===m?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{m==='existing'?'Existing':'Upload new'}</button>
+                })}
               </div>
             )}
             {dataMode === 'existing'
-              ? <select value={selDataset} onChange={function(e){setSelDataset(e.target.value)}} style={{ ...selectStyle, marginBottom: 14 }}>{datasets.map(function(d){return <option key={d.id} value={d.id}>{d.name}</option>})}</select>
+              ? <select value={selDataset} onChange={function(e){setSelDataset(e.target.value)}} style={{ ...selectStyle, marginBottom: 14 }}>
+                  {datasets.map(function(d){return <option key={d.id} value={d.id}>{d.name}</option>})}
+                </select>
               : <div style={{ marginBottom: 14 }}>
                   <input type="text" placeholder="Dataset name (optional)" value={dataName} onChange={function(e){setDataName(e.target.value)}} style={inputStyle} />
                   <div onClick={function(){dataRef.current&&dataRef.current.click()}} style={{ border: '1px dashed '+(dataFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: dataFile?'var(--accent-dim)':'transparent' }}>
@@ -527,46 +654,68 @@ export default function SetupScreen({ onReady }) {
                   </div>
                 </div>
             }
+
+            {/* Metadata */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', fontFamily: 'var(--font-body)' }}>Metadata</p>
               <AutoGenButton state={autoGenState} onGenerate={handleAutoGenMeta} disabled={dataMode === 'existing' ? !selDataset : !dataFile} compact={true} />
             </div>
             {!loadingLists && metaSets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
-                {['existing','upload'].map(function(m) { return <button key={m} onClick={function(){setMetaMode(m)}} style={{ padding: '3px 9px', fontSize: 10, cursor: 'pointer', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (metaMode===m?'var(--accent-border)':'var(--border)'), background: metaMode===m?'var(--accent-dim)':'transparent', color: metaMode===m?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{m==='existing'?'Existing':'Upload new'}</button> })}
+                {['existing','upload'].map(function(m) {
+                  return <button key={m} onClick={function(){setMetaMode(m)}} style={{ padding: '3px 9px', fontSize: 10, cursor: 'pointer', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (metaMode===m?'var(--accent-border)':'var(--border)'), background: metaMode===m?'var(--accent-dim)':'transparent', color: metaMode===m?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{m==='existing'?'Existing':'Upload new'}</button>
+                })}
               </div>
             )}
-           {metaMode === 'existing'
-  ? <select value={selMeta} onChange={function(e){setSelMeta(e.target.value)}} style={selectStyle}>
-      {metaSets.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>})}
-    </select>
-  : <div>
-      <input type="text" placeholder="Metadata name (optional)" value={metaName} onChange={function(e){setMetaName(e.target.value)}} style={inputStyle} />
-      <div onClick={function(){metaRef.current&&metaRef.current.click()}} style={{ border: '1px dashed '+(metaFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: metaFile?'var(--accent-dim)':'transparent' }}>
-        <input ref={metaRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setMetaFile(e.target.files[0]||null)}} />
-        <p style={{ fontSize: 11, color: metaFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{metaFile?metaFile.name:'Select metadata file (.xlsx or .csv)'}</p>
-      </div>
-      {metaFile && (
-        <button onClick={handleSaveMetadata} disabled={savingMeta}
-          style={{ marginTop: 8, width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: savingMeta ? 'transparent' : 'var(--accent-dim)', border: '1px solid ' + (savingMeta ? 'var(--border)' : 'var(--accent-border)'), color: savingMeta ? 'var(--text-tertiary)' : 'var(--text-accent)', fontSize: 11, fontWeight: 600, cursor: savingMeta ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', letterSpacing: '0.08em' }}>
-          {savingMeta ? 'Saving...' : 'Save Metadata'}
-        </button>
-      )}
-    </div>
-}
+            {metaMode === 'existing'
+              ? <select value={selMeta} onChange={function(e){setSelMeta(e.target.value)}} style={selectStyle}>
+                  {metaSets.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>})}
+                </select>
+              : <div>
+                  <input type="text" placeholder="Metadata name (optional)" value={metaName} onChange={function(e){setMetaName(e.target.value)}} style={inputStyle} />
+                  <div onClick={function(){metaRef.current&&metaRef.current.click()}} style={{ border: '1px dashed '+(metaFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: metaFile?'var(--accent-dim)':'transparent' }}>
+                    <input ref={metaRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setMetaFile(e.target.files[0]||null)}} />
+                    <p style={{ fontSize: 11, color: metaFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{metaFile?metaFile.name:'Select metadata file (.xlsx or .csv)'}</p>
+                  </div>
+                  {/* Save Metadata button — appears when file is selected */}
+                  {metaFile && (
+                    <button
+                      onClick={handleSaveMetadata}
+                      disabled={savingMeta}
+                      style={{
+                        marginTop: 8, width: '100%', padding: '8px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        background: savingMeta ? 'transparent' : 'var(--accent-dim)',
+                        border: '1px solid ' + (savingMeta ? 'var(--border)' : 'var(--accent-border)'),
+                        color: savingMeta ? 'var(--text-tertiary)' : 'var(--text-accent)',
+                        fontSize: 11, fontWeight: 600, cursor: savingMeta ? 'not-allowed' : 'pointer',
+                        fontFamily: 'var(--font-display)', letterSpacing: '0.08em',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      {savingMeta ? <><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} /> Saving...</> : '↑ Save Metadata'}
+                    </button>
+                  )}
+                </div>
+            }
             {autoGenState === 'done' && autoGenResult && <AutoGenResult result={autoGenResult} />}
           </SectionCard>
 
+          {/* Section 2: Time Period */}
           <SectionCard n="2" title="Time period">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
             <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
               <div>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>View</p>
-                <div style={{ display: 'flex', gap: 5 }}>{['MTD','YTD','QTD'].map(function(v) { return <ProdChip key={v} active={viewType===v} onClick={function(){setViewType(v)}}>{v}</ProdChip> })}</div>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  {['MTD','YTD','QTD'].map(function(v) { return <ProdChip key={v} active={viewType===v} onClick={function(){setViewType(v)}}>{v}</ProdChip> })}
+                </div>
               </div>
               <div>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Compare</p>
-                <div style={{ display: 'flex', gap: 5 }}>{allowedComp.map(function(opt) { return <ProdChip key={opt.value} active={compType===opt.value} onClick={function(){setCompType(opt.value)}}>{opt.value}</ProdChip> })}</div>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  {allowedComp.map(function(opt) { return <ProdChip key={opt.value} active={compType===opt.value} onClick={function(){setCompType(opt.value)}}>{opt.value}</ProdChip> })}
+                </div>
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -583,7 +732,9 @@ export default function SetupScreen({ onReady }) {
             {periodPairs.length > 1 && (
               <div style={{ marginBottom: 10 }}>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Period calendar</p>
-                <div style={{ display: 'flex', gap: 5 }}>{periodPairs.map(function(pair, idx) { return <ProdChip key={idx} active={selPairIdx===idx} onClick={function(){setSelPairIdx(idx)}}>{pair.label}</ProdChip> })}</div>
+                <div style={{ display: 'flex', gap: 5 }}>
+                  {periodPairs.map(function(pair, idx) { return <ProdChip key={idx} active={selPairIdx===idx} onClick={function(){setSelPairIdx(idx)}}>{pair.label}</ProdChip> })}
+                </div>
               </div>
             )}
             <div style={{ padding: '8px 12px', background: 'var(--accent-dim)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
@@ -594,7 +745,7 @@ export default function SetupScreen({ onReady }) {
             </div>
           </SectionCard>
 
-          {/* Data Filters — only shown when mandatory filter fields exist */}
+          {/* Section 3: Data Filters — only shown when mandatory filter fields exist */}
           {mandatoryFilterFields.length > 0 && (
             <SectionCard n="3" title="Data Filters">
               <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -608,13 +759,18 @@ export default function SetupScreen({ onReady }) {
                   var selected   = mandatoryFilterValues[f.field_name] || defaultVal
                   return (
                     <div key={f.field_name}>
-                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, fontFamily: 'var(--font-body)' }}>{f.display_name || f.field_name}</p>
+                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, fontFamily: 'var(--font-body)' }}>
+                        {f.display_name || f.field_name}
+                      </p>
                       {options.length > 0 ? (
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          {options.map(function(opt) { return <ProdChip key={opt} active={selected === opt} amber={true} onClick={function() { handleMandatoryFilterChange(f.field_name, opt) }}>{opt}</ProdChip> })}
+                          {options.map(function(opt) {
+                            return <ProdChip key={opt} active={selected === opt} amber={true} onClick={function() { handleMandatoryFilterChange(f.field_name, opt) }}>{opt}</ProdChip>
+                          })}
                         </div>
                       ) : (
-                        <input type="text" value={selected} onChange={function(e) { handleMandatoryFilterChange(f.field_name, e.target.value) }}
+                        <input type="text" value={selected}
+                          onChange={function(e) { handleMandatoryFilterChange(f.field_name, e.target.value) }}
                           style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', outline: 'none' }}
                           onFocus={function(e) { e.target.style.borderColor = 'rgba(240,160,48,0.4)' }}
                           onBlur={function(e)  { e.target.style.borderColor = 'var(--border)' }}
@@ -632,13 +788,18 @@ export default function SetupScreen({ onReady }) {
           )}
         </div>
 
-        {/* RIGHT: Context + Panels + Build */}
+        {/* ── RIGHT CARD ────────────────────────────────────────────────── */}
         <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
 
+          {/* Context */}
           <SectionCard n={mandatoryFilterFields.length > 0 ? '4' : '3'} title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.</p>
-            <textarea ref={contextRef} defaultValue="" placeholder={'e.g. "I am head of West Region and my focus is Revenue"'} style={{ width: '100%', minHeight: 72, padding: '9px 11px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', lineHeight: 1.5 }}
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
+              Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.
+            </p>
+            <textarea ref={contextRef} defaultValue=""
+              placeholder={'e.g. "I am head of West Region and my focus is Revenue"'}
+              style={{ width: '100%', minHeight: 72, padding: '9px 11px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', lineHeight: 1.5 }}
               onFocus={function(e){e.target.style.borderColor='var(--accent-border)'}}
               onBlur={function(e){e.target.style.borderColor='var(--border)'}}
             />
@@ -648,13 +809,17 @@ export default function SetupScreen({ onReady }) {
                 {extracted.filters && extracted.filters.length > 0 && (
                   <div style={{ marginBottom: 8 }}>
                     <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>Filters</p>
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{extracted.filters.map(function(f,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{f.display||(f.field+' '+f.operator+' '+f.value)}</span> })}</div>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      {extracted.filters.map(function(f,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{f.display||(f.field+' '+f.operator+' '+f.value)}</span> })}
+                    </div>
                   </div>
                 )}
                 {extracted.kpi_focus && extracted.kpi_focus.length > 0 && (
                   <div style={{ marginBottom: 6 }}>
                     <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>KPI focus</p>
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{extracted.kpi_focus.map(function(k,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>{k}</span> })}</div>
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      {extracted.kpi_focus.map(function(k,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>{k}</span> })}
+                    </div>
                   </div>
                 )}
                 {extracted.explanation && <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{extracted.explanation}</p>}
@@ -662,6 +827,7 @@ export default function SetupScreen({ onReady }) {
             )}
           </SectionCard>
 
+          {/* Dashboard panels */}
           <SectionCard n={mandatoryFilterFields.length > 0 ? '5' : '4'} title="Dashboard panels">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
             {[
@@ -673,7 +839,8 @@ export default function SetupScreen({ onReady }) {
             ].map(function(item) {
               var on = prefs[item.key] !== false
               return (
-                <div key={item.key} onClick={function(){setPrefs(function(p){var n=Object.assign({},p);n[item.key]=!on;return n})}}
+                <div key={item.key}
+                  onClick={function(){setPrefs(function(p){var n=Object.assign({},p);n[item.key]=!on;return n})}}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 9px', borderRadius: 'var(--radius-md)', border: '1px solid '+(on?'var(--accent-border)':'var(--border)'), background: on?'var(--accent-dim)':'transparent', cursor: 'pointer', transition: 'all var(--transition)', marginBottom: 6 }}>
                   <div style={{ width: 30, height: 16, borderRadius: 8, background: on?'var(--accent)':'var(--border)', position: 'relative', flexShrink: 0, transition: 'background var(--transition)' }}>
                     <div style={{ position: 'absolute', top: 2, left: on?15:2, width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left var(--transition)' }} />
@@ -687,14 +854,29 @@ export default function SetupScreen({ onReady }) {
             })}
           </SectionCard>
 
-          {error && <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)' }}>{error}</p>}
+          {error && (
+            <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)' }}>
+              {error}
+            </p>
+          )}
 
           <div style={{ flex: 1 }} />
 
           <button onClick={handleBuild} disabled={working || extracting}
-            style={{ width: '100%', padding: '14px 24px', background: working||extracting ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (working||extracting ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: working||extracting ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: working||extracting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: working||extracting ? 'none' : '0 0 20px rgba(0,200,240,0.06)' }}>
+            style={{
+              width: '100%', padding: '14px 24px',
+              background: working||extracting ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+              border: '1px solid ' + (working||extracting ? 'var(--border)' : 'var(--accent-border)'),
+              borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
+              letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: working||extracting ? 'var(--text-tertiary)' : 'var(--text-accent)',
+              cursor: working||extracting ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+              boxShadow: working||extracting ? 'none' : '0 0 20px rgba(0,200,240,0.06)',
+            }}>
             {extracting ? <><span className="spinner" /><span style={{ fontSize: 12 }}>Analysing context…</span></>
-              : working ? <><span className="spinner" /><span style={{ fontSize: 12 }}>{progress || 'Processing…'}</span></>
+              : working   ? <><span className="spinner" /><span style={{ fontSize: 12 }}>{progress || 'Processing…'}</span></>
               : showConfirm ? 'Build with this context'
               : 'Generate Intelligence'}
           </button>
