@@ -122,6 +122,7 @@ function VapiHelpWidget() {
   var [vapiInst,   setVapiInst]   = useState(null)
   var [volume,     setVolume]     = useState(0)
   var [errorMsg,   setErrorMsg]   = useState('')
+  var [savingMeta, setSavingMeta] = useState(false)
 
   async function getVapi() {
     if (vapiInst) return vapiInst
@@ -354,6 +355,20 @@ export default function SetupScreen({ onReady }) {
     } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
   }
 
+  async function handleSaveMetadata() {
+  if (!metaFile) return
+  setSavingMeta(true); setError('')
+  try {
+    var mf2 = new FormData(); mf2.append('file', metaFile); mf2.append('name', metaName || metaFile.name)
+    var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 }); var mj = await mr.json()
+    if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
+    var savedMetaId = String(mj.metadataSet.id)
+    await loadLists()
+    setSelMeta(savedMetaId)
+    setMetaMode('existing')
+  } catch(err) { setError('Metadata save failed: ' + err.message) }
+  setSavingMeta(false)
+}
   async function handleBuild() {
     setError('')
     var contextText = (contextRef.current && contextRef.current.value) || ''
@@ -379,14 +394,6 @@ export default function SetupScreen({ onReady }) {
         if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
         var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
         finalDatasetId = String(dataset.id); await loadLists()
-      }
-      if (metaMode === 'upload') {
-        if (!metaFile) { setError('Please select a metadata file.'); setWorking(false); return }
-        setProgress('Saving metadata...')
-        var mf2 = new FormData(); mf2.append('file', metaFile); mf2.append('name', metaName || metaFile.name)
-        var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 }); var mj = await mr.json()
-        if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
-        finalMetaId = String(mj.metadataSet.id); await loadLists()
       }
 
       // ── Refresh mandatory filters after upload using finalMetaId ─────────
@@ -529,16 +536,24 @@ export default function SetupScreen({ onReady }) {
                 {['existing','upload'].map(function(m) { return <button key={m} onClick={function(){setMetaMode(m)}} style={{ padding: '3px 9px', fontSize: 10, cursor: 'pointer', borderRadius: 'var(--radius-sm)', border: '1px solid ' + (metaMode===m?'var(--accent-border)':'var(--border)'), background: metaMode===m?'var(--accent-dim)':'transparent', color: metaMode===m?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{m==='existing'?'Existing':'Upload new'}</button> })}
               </div>
             )}
-            {metaMode === 'existing'
-              ? <select value={selMeta} onChange={function(e){setSelMeta(e.target.value)}} style={selectStyle}>{metaSets.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>})}</select>
-              : <div>
-                  <input type="text" placeholder="Metadata name (optional)" value={metaName} onChange={function(e){setMetaName(e.target.value)}} style={inputStyle} />
-                  <div onClick={function(){metaRef.current&&metaRef.current.click()}} style={{ border: '1px dashed '+(metaFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: metaFile?'var(--accent-dim)':'transparent' }}>
-                    <input ref={metaRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setMetaFile(e.target.files[0]||null)}} />
-                    <p style={{ fontSize: 11, color: metaFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{metaFile?metaFile.name:'Select metadata file (.xlsx or .csv)'}</p>
-                  </div>
-                </div>
-            }
+           {metaMode === 'existing'
+  ? <select value={selMeta} onChange={function(e){setSelMeta(e.target.value)}} style={selectStyle}>
+      {metaSets.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>})}
+    </select>
+  : <div>
+      <input type="text" placeholder="Metadata name (optional)" value={metaName} onChange={function(e){setMetaName(e.target.value)}} style={inputStyle} />
+      <div onClick={function(){metaRef.current&&metaRef.current.click()}} style={{ border: '1px dashed '+(metaFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: metaFile?'var(--accent-dim)':'transparent' }}>
+        <input ref={metaRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setMetaFile(e.target.files[0]||null)}} />
+        <p style={{ fontSize: 11, color: metaFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{metaFile?metaFile.name:'Select metadata file (.xlsx or .csv)'}</p>
+      </div>
+      {metaFile && (
+        <button onClick={handleSaveMetadata} disabled={savingMeta}
+          style={{ marginTop: 8, width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: savingMeta ? 'transparent' : 'var(--accent-dim)', border: '1px solid ' + (savingMeta ? 'var(--border)' : 'var(--accent-border)'), color: savingMeta ? 'var(--text-tertiary)' : 'var(--text-accent)', fontSize: 11, fontWeight: 600, cursor: savingMeta ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', letterSpacing: '0.08em' }}>
+          {savingMeta ? 'Saving...' : 'Save Metadata'}
+        </button>
+      )}
+    </div>
+}
             {autoGenState === 'done' && autoGenResult && <AutoGenResult result={autoGenResult} />}
           </SectionCard>
 
