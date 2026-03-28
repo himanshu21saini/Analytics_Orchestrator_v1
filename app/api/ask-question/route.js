@@ -147,6 +147,7 @@ export async function POST(request) {
     '12. When results span multiple dimensions (region + branch), concatenate: branch_region || \' — \' || branch_name AS label.',
     '13. When outer query selects from subquery with pre-aggregated columns, do NOT apply another aggregate on them.',
     '14. For trend/weekly charts use chart_type "line" or "area". Weekly label: TO_CHAR(safe_date(date_col), \'IYYY-"W"IW\') AS period.',
+    '14b. For weekly trends, use calendar week format TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW) — ISO week causes Dec weeks to show as next year e.g. 2026-W01 for Dec 2025 data.',
     '15. Entity name in question (e.g. "branch_01") is a VALUE to filter on: WHERE branch_name = \'branch_01\'.',
     '',
     '## OUTPUT — JSON only',
