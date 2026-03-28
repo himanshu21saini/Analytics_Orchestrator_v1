@@ -1,10 +1,18 @@
 'use client'
-
 import { useState } from 'react'
+import {
+  BarChart, Bar, AreaChart, Area, LineChart, Line,
+  PieChart, Pie, Cell, ScatterChart, Scatter,
+  XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LabelList,
+} from 'recharts'
+
+
 import SetupScreen from '../components/SetupScreen'
 import Dashboard from '../components/Dashboard'
 import AskOnlyView from '../components/AskOnlyView'
 import { APP_NAME, APP_TAGLINE } from '../lib/app-config'
+
 
 export default function Home() {
   var [appState, setAppState] = useState('setup')
