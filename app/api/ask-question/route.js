@@ -166,6 +166,7 @@ export async function POST(request) {
 '    CORRECT: WHERE entity_col IN (SELECT entity_col FROM tbl WHERE current_period_filter GROUP BY entity_col ORDER BY AGG(metric) DESC LIMIT N)',
     '18. For multi-series trend queries (multiple entities over time), use chart_type "table" instead of "line" — line charts with more than 5 series are unreadable.',
 '    Also use chart_type "table" when the question asks for a ranked list with multiple columns of data.',
+    '20. ONLY use field names that exist in the field catalogue above. NEVER invent or assume fields like "revenue", "sales", "profit" that are not explicitly listed. If the question uses vague terms like "underperformed" or "best", map them to the most relevant KPI from the catalogue based on business_priority and type.',
     '',
     '## OUTPUT — JSON only',
     '{"queries":[{"id":"q1","title":"title","chart_type":"bar|line|area|pie|donut|scatter|kpi","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"one sentence"}],"dependent_fields":[],"period_used":"' + periodConds.label + '"}',
@@ -173,7 +174,7 @@ export async function POST(request) {
 
   var queryGenRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2000, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. Direct column access — no JSONB.' }, { role: 'user', content: queryGenPrompt }] }),
+    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2000, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. Direct column access — no JSONB. CRITICAL: only use field names from the field catalogue provided — never invent fields not listed there.'}, { role: 'user', content: queryGenPrompt }] }),
   })
   var queryGenJson = await queryGenRes.json()
   if (!queryGenRes.ok) return Response.json({ error: (queryGenJson.error && queryGenJson.error.message) || 'Query generation failed.' }, { status: 500 })
