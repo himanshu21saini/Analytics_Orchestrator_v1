@@ -7,6 +7,17 @@ var MONTHS_MAP = {
   july:7, august:8, september:9, october:10, november:11, december:12,
 }
 
+// ── Detect if question needs two-pass analysis ────────────────────────────────
+function isTwoPassQuestion(question) {
+  var q = question.toLowerCase()
+  return /\bwhy\b/.test(q) ||
+    /what (caused|drove|led to|contributed|impacted)/.test(q) ||
+    /underperform(ed|ing)?/.test(q) ||
+    /overperform(ed|ing)?/.test(q) ||
+    /root cause/.test(q) ||
+    /what.{0,20}(behind|driving|reason)/.test(q)
+}
+
 function parseTimeFromQuestion(question) {
   var q = question.toLowerCase()
   var m1 = q.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)['\s]+(\d{2,4})/i)
@@ -20,22 +31,65 @@ function parseTimeFromQuestion(question) {
 
 function buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf) {
   if (parsedTime) {
-    if (parsedTime.type === 'month') {
-      return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' = ' + parsedTime.month, label: parsedTime.label }
-    }
-    if (parsedTime.type === 'quarter') {
-      return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' >= ' + parsedTime.monthMin + ' AND ' + mf + ' <= ' + parsedTime.monthMax, label: parsedTime.label }
-    }
+    if (parsedTime.type === 'month') return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' = ' + parsedTime.month, label: parsedTime.label }
+    if (parsedTime.type === 'quarter') return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' >= ' + parsedTime.monthMin + ' AND ' + mf + ' <= ' + parsedTime.monthMax, label: parsedTime.label }
     if (parsedTime.type === 'range') {
       var cond = '(' + yf + ' > ' + parsedTime.fromYear + ' OR (' + yf + ' = ' + parsedTime.fromYear + ' AND ' + mf + ' >= ' + parsedTime.fromMonth + '))' +
         ' AND (' + yf + ' < ' + parsedTime.toYear + ' OR (' + yf + ' = ' + parsedTime.toYear + ' AND ' + mf + ' <= ' + parsedTime.toMonth + '))'
       return { cond: cond, label: parsedTime.label }
     }
   }
-  return {
-    cond:  periodInfo.curCond || (yf + ' = ' + (periodInfo.curYear || new Date().getFullYear())),
-    label: periodInfo.viewLabel || 'current period',
-  }
+  return { cond: periodInfo.curCond || (yf + ' = ' + (periodInfo.curYear || new Date().getFullYear())), label: periodInfo.viewLabel || 'current period' }
+}
+
+// ── Build shared prompt sections ──────────────────────────────────────────────
+function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNote, metaSummary) {
+  return [
+    '## DATABASE',
+    'Table: ' + tbl + ' (real typed SQL columns — NOT JSONB)',
+    'Access fields directly. NO data->>\'\' syntax. NO ::numeric casting.',
+    '',
+    '## TIME PERIOD',
+    'Year column: ' + yf + ' | Month column: ' + mf,
+    'Period label: ' + periodConds.label,
+    'Period SQL condition: ' + periodConds.cond,
+    contextNote,
+    mandatoryNote,
+    '',
+    '## FIELD CATALOGUE',
+    JSON.stringify(metaSummary, null, 2),
+    '',
+    '## SQL RULES',
+    '1. All field access is direct column name. NO data->>\'\' syntax ever.',
+    '2. Numeric columns are already NUMERIC — no ::numeric casting needed.',
+    '2b. For columns with data_type "Integer" or "Float", NEVER filter with string values like "yes","true","Y","active". Use numeric: 1 for true/active, 0 for false/inactive.',
+    '3. Every query must include WHERE ' + periodConds.cond + CF,
+    '4. Use aggregation from catalogue (SUM for cumulative, AVG for point_in_time).',
+    '5. For ranking: ORDER BY value DESC LIMIT 10.',
+    '6. For trend (line/area): alias time as "period" using CONCAT(' + yf + ", '-', LPAD(CAST(" + mf + " AS TEXT), 2, '0')), alias metric as \"value\".",
+    '7. For bar/kpi: alias main value as "current_value", label as "label".',
+    '8. Date columns stored as TEXT in M/D/YY format. Use safe_date(column_name) for date operations.',
+    '   Weekday: TO_CHAR(safe_date(col), \'Day\'). DOW: EXTRACT(DOW FROM safe_date(col)).',
+    '9. When grouping by derived label and ordering by different derivation, use a subquery.',
+    '   CORRECT: SELECT label, dow, avg_val FROM (SELECT TO_CHAR(safe_date(col),\'Day\') AS label, EXTRACT(DOW FROM safe_date(col)) AS dow, AVG(metric) AS avg_val FROM tbl GROUP BY label, dow) sub ORDER BY dow',
+    '10. Derived KPIs: use calculation_logic formula directly if provided.',
+    '11. When results span multiple dimensions, concatenate: dim1 || \' — \' || dim2 AS label.',
+    '12. Do NOT re-aggregate pre-aggregated subquery columns.',
+    '13. For trend/weekly: use chart_type "line" or "area". Weekly: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') AS period.',
+    '14. Entity name in question is a VALUE to filter on, not a field name.',
+    '15. Window functions (OVER/PARTITION BY) NOT allowed in HAVING. Wrap in subquery.',
+    '    CORRECT: SELECT label, val FROM (SELECT dim AS label, window_fn() AS val FROM tbl GROUP BY dim) sub WHERE val > threshold',
+    '16. For percentage threshold questions, use conditional aggregation — never correlated subqueries.',
+    '    CORRECT: SELECT label, pct FROM (SELECT dim AS label, 100.0 * SUM(CASE WHEN condition THEN 1 ELSE 0 END) / COUNT(*) AS pct FROM tbl WHERE period GROUP BY dim) sub WHERE pct >= threshold',
+    '    Also applies to percentage threshold questions — never use correlated subqueries for per-entity totals.',
+    '17. For "historical comparison of top N entities", filter trend query to those top N using a subquery.',
+    '    WHERE entity_col IN (SELECT entity_col FROM tbl WHERE period GROUP BY entity_col ORDER BY AGG(metric) DESC LIMIT N)',
+    '18. For multi-series trend queries with more than 5 series, use chart_type "table".',
+    '    Also use chart_type "table" for ranked lists with multiple columns.',
+    '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
+    '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
+    '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
+  ].join('\n')
 }
 
 export async function POST(request) {
@@ -55,15 +109,14 @@ export async function POST(request) {
 
   var tbl = 'ds_' + datasetId
 
-  // Context filters — direct column comparison
+  // Context + mandatory filters
   var contextFilterSQL = ''
   if (userContext && userContext.filters && userContext.filters.length) {
     contextFilterSQL = userContext.filters.map(function(f) {
       var op = (f.operator === 'equals' || f.operator === '=') ? '=' : (f.operator === 'not_equals' || f.operator === '!=') ? '!=' : f.operator
-      return " AND " + f.field + " " + op + " '" + String(f.value || '').replace(/'/g, "''") + "'"
+      return ' AND ' + f.field + ' ' + op + " '" + String(f.value || '').replace(/'/g, "''") + "'"
     }).join('')
   }
-  // Mandatory filters
   var mandatoryFilterSQL = mandatoryFilters.length ? mandatoryFilters.map(function(f) { return " AND " + f.field + " = '" + String(f.value || '').replace(/'/g, "''") + "'" }).join('') : ''
   var CF = contextFilterSQL + mandatoryFilterSQL
 
@@ -72,36 +125,280 @@ export async function POST(request) {
   var mf          = periodInfo.mf || 'report_month'
   var periodConds = buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf)
 
-  // Field catalogue — only is_output != N fields
- var metaSummary = metadata
-  .filter(function(m) { return m.is_output !== 'N' })
-  .map(function(m) {
-    return {
-      field:               m.field_name,
-      display:             m.display_name,
-      type:                m.type,
-      data_type:           m.data_type || '',
-      unit:                m.unit || '',
-      definition:          m.definition || '',
-      aggregation:         m.aggregation || '',
-      accumulation:        m.accumulation_type || '',
-      business_priority:   m.business_priority || '',
-      favorable_direction: m.favorable_direction || '',
-      date_format:         m.date_format || '',
-      calculation_logic:   m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
-      dependencies:        m.dependencies ? m.dependencies : undefined,
+  var metaSummary = metadata
+    .filter(function(m) { return m.is_output !== 'N' })
+    .map(function(m) {
+      return {
+        field:               m.field_name,
+        display:             m.display_name,
+        type:                m.type,
+        data_type:           m.data_type || '',
+        unit:                m.unit || '',
+        definition:          m.definition || '',
+        aggregation:         m.aggregation || '',
+        accumulation:        m.accumulation_type || '',
+        business_priority:   m.business_priority || '',
+        favorable_direction: m.favorable_direction || '',
+        calculation_logic:   m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
+        dependencies:        m.dependencies ? m.dependencies : undefined,
+      }
+    })
+
+  var contextNote    = userContext && userContext.explanation ? '\nSETUP CONTEXT: ' + userContext.explanation + (CF ? '\nSQL filter: ' + CF : '') : (CF ? '\nCONTEXT FILTER: ' + CF : '')
+  var mandatoryNote  = mandatoryFilters.length ? '\nMANDATORY FILTERS (always apply): ' + mandatoryFilters.map(function(f) { return (f.display_name || f.field) + ' = "' + f.value + '"' }).join(', ') : ''
+  var promptBase     = buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNote, metaSummary)
+  var totalUsage     = { prompt_tokens: 0, completion_tokens: 0 }
+
+  // ── HELPER: call OpenAI ───────────────────────────────────────────────────
+  async function callOpenAI(systemMsg, userMsg, maxTokens) {
+    var res  = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4o', max_tokens: maxTokens || 2000, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: systemMsg }, { role: 'user', content: userMsg }] }),
+    })
+    var json = await res.json()
+    if (!res.ok) throw new Error((json.error && json.error.message) || 'OpenAI error ' + res.status)
+    totalUsage.prompt_tokens     += json.usage?.prompt_tokens     || 0
+    totalUsage.completion_tokens += json.usage?.completion_tokens || 0
+    return JSON.parse(json.choices[0].message.content.replace(/```json|```/g, '').trim())
+  }
+
+  // ── HELPER: execute queries ───────────────────────────────────────────────
+  async function executeQueries(queries) {
+    var results = []
+    for (var i = 0; i < queries.length; i++) {
+      var q = queries[i]
+      if (q.chart_type === 'waterfall') { results.push(Object.assign({}, q, { data: q.data || [], error: null })); continue }
+      try {
+        var rows = await query(q.sql)
+        results.push(Object.assign({}, q, { data: rows, error: null }))
+      } catch(err) {
+        console.error('ask-question query error:', err.message, '\nSQL:', q.sql)
+        results.push(Object.assign({}, q, { data: [], error: err.message }))
+      }
     }
-  })
+    return results
+  }
 
-  var contextNote = userContext && userContext.explanation
-    ? '\nSETUP CONTEXT: ' + userContext.explanation + (CF ? '\nSQL filter: ' + CF : '')
-    : (CF ? '\nCONTEXT FILTER (appended to all queries): ' + CF : '')
+  // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
+  if (isTwoPassQuestion(question)) {
 
-  var mandatoryNote = mandatoryFilters.length
-    ? '\nMANDATORY FILTERS (always apply — already in CF): ' + mandatoryFilters.map(function(f) { return (f.display_name || f.field) + ' = "' + f.value + '"' }).join(', ')
-    : ''
+    // ── Pass 1: Entity identification ───────────────────────────────────────
+    var pass1Prompt = [
+      '## TASK',
+      'This is a two-part question. For Pass 1, generate ONLY ONE ranking SQL query that identifies the specific entities (e.g. branches, regions, segments) relevant to this question.',
+      'Do NOT generate why/causal queries yet — just the ranking query.',
+      '',
+      '## QUESTION',
+      question,
+      '',
+      promptBase,
+      '',
+      '## PASS 1 OUTPUT — JSON only',
+      '{"query":{"id":"pass1_ranking","title":"title","chart_type":"bar","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"one sentence"},"target_kpi":"field_name_of_main_kpi","entity_field":"field_name_of_entity_dimension","period_used":"' + periodConds.label + '"}',
+    ].join('\n')
 
-  // ── Step 1: Generate SQL ──────────────────────────────────────────────────
+    var pass1Parsed
+    try {
+      pass1Parsed = await callOpenAI(
+        'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. ONLY use fields from the catalogue. Never invent fields.',
+        pass1Prompt,
+        800
+      )
+    } catch(err) {
+      return Response.json({
+        question, error: null,
+        queries: [{ id: 'pass1_error', title: 'Entity Identification Failed', chart_type: 'error', data: [], error: 'Could not identify the entities to analyse. Try rephrasing — e.g. "which branches had the lowest BFI score in ' + periodConds.label + ' and why?"' }],
+        narrative: null, periodUsed: periodConds.label,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    // Execute Pass 1 query
+    var pass1Query   = pass1Parsed.query
+    var targetKpi    = pass1Parsed.target_kpi    || ''
+    var entityField  = pass1Parsed.entity_field  || 'label'
+    var periodUsed   = pass1Parsed.period_used   || periodConds.label
+    var pass1Results = []
+
+    try {
+      pass1Results = await query(pass1Query.sql)
+    } catch(err) {
+      return Response.json({
+        question, error: null,
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'Pass 1 SQL error: ' + err.message + '. Try rephrasing your question with explicit field names.' })],
+        narrative: null, periodUsed,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    if (!pass1Results || !pass1Results.length) {
+      return Response.json({
+        question, error: null,
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'No entities found for this question in ' + periodUsed + '. Check that data exists for this period.' })],
+        narrative: null, periodUsed,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    // Extract entity list from Pass 1 results
+    var entityList = pass1Results.map(function(r) { return r[pass1Query.label_key || 'label'] || r['label'] }).filter(Boolean)
+
+    // Find target KPI dependencies from metadata
+    var targetKpiMeta   = metadata.find(function(m) { return m.field_name === targetKpi })
+    var dependencyKpis  = []
+    if (targetKpiMeta && targetKpiMeta.dependencies) {
+      var depNames = targetKpiMeta.dependencies.split(',').map(function(d) { return d.trim() }).filter(Boolean)
+      dependencyKpis = depNames.filter(function(d) {
+        var m = metadata.find(function(m) { return m.field_name === d })
+        return m && (m.type === 'kpi' || m.type === 'derived_kpi') && m.is_output !== 'N'
+      })
+    }
+
+    // ── Pass 2: Causal analysis ──────────────────────────────────────────────
+    var entityListStr   = entityList.map(function(e) { return "'" + String(e).replace(/'/g, "''") + "'" }).join(', ')
+    var depKpisStr      = dependencyKpis.length ? dependencyKpis.join(', ') : 'none found — use other high-priority KPIs from catalogue'
+    var pass1ResultsStr = JSON.stringify(pass1Results.slice(0, 10), null, 2)
+
+    var pass2Prompt = [
+      '## TASK',
+      'This is Pass 2 of a two-pass analysis. Pass 1 has already identified the key entities.',
+      'Now generate causal/why queries to explain WHY these entities performed the way they did.',
+      '',
+      '## ORIGINAL QUESTION',
+      question,
+      '',
+      '## PASS 1 RESULTS (already executed — do not re-run this)',
+      'Target KPI: ' + targetKpi,
+      'Entity field: ' + entityField,
+      'Identified entities: ' + entityList.join(', '),
+      'Pass 1 data: ' + pass1ResultsStr,
+      '',
+      '## DEPENDENCY KPIs FOR ' + targetKpi,
+      depKpisStr,
+      '',
+      promptBase,
+      '',
+      '## PASS 2 INSTRUCTIONS',
+      'Generate exactly 2 queries:',
+      '',
+      'QUERY 1 — Waterfall data query:',
+      'Fetch the target KPI AND all dependency KPIs for:',
+      '  a) Each identified entity (WHERE ' + entityField + ' IN (' + entityListStr + '))',
+      '  b) Portfolio average (all entities, same period) — use a UNION or separate query',
+      'The easiest approach: one query with GROUP BY ' + entityField + ' that includes a row for each entity PLUS use a second query for portfolio avg.',
+      'Use chart_type: "waterfall"',
+      'Include these extra fields in the query response:',
+      '  entity_field: "' + entityField + '"',
+      '  entity_list: ' + JSON.stringify(entityList),
+      '  target_kpi: "' + targetKpi + '"',
+      '  dependency_kpis: ' + JSON.stringify(dependencyKpis),
+      '',
+      'QUERY 2 — Portfolio average query:',
+      'SELECT all dependency KPIs + target KPI as AVG for ALL entities (no entity filter) for the same period.',
+      'Use chart_type: "portfolio_avg" — this will be used as baseline for waterfall computation.',
+      'Use id: "portfolio_avg"',
+      '',
+      '## PASS 2 OUTPUT — JSON only',
+      '{"queries":[{"id":"waterfall_data","title":"...","chart_type":"waterfall","sql":"SELECT ...","entity_field":"' + entityField + '","entity_list":' + JSON.stringify(entityList) + ',"target_kpi":"' + targetKpi + '","dependency_kpis":' + JSON.stringify(dependencyKpis) + ',"label_key":"' + entityField + '","unit":"","insight":"..."},{"id":"portfolio_avg","title":"Portfolio Average","chart_type":"portfolio_avg","sql":"SELECT AVG(...) ...","unit":"","insight":""}],"period_used":"' + periodUsed + '"}',
+    ].join('\n')
+
+    var pass2Parsed
+    try {
+      pass2Parsed = await callOpenAI(
+        'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. ONLY use fields from the catalogue.',
+        pass2Prompt,
+        1500
+      )
+    } catch(err) {
+      // Pass 2 failed — return Pass 1 results only with a note
+      var pass1QueryResult = Object.assign({}, pass1Query, { data: pass1Results, error: null })
+      return Response.json({
+        question, periodUsed,
+        queries: [pass1QueryResult],
+        narrative: { answer: 'Identified the entities but could not complete causal analysis. ' + err.message, key_findings: [], drivers: '', investigate: [], data_limitation: 'Causal analysis failed — try asking more specifically.' },
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    var pass2Queries = pass2Parsed.queries || []
+    periodUsed       = pass2Parsed.period_used || periodUsed
+
+    // Execute Pass 2 queries
+    var waterfallQuery    = pass2Queries.find(function(q) { return q.chart_type === 'waterfall' })
+    var portfolioAvgQuery = pass2Queries.find(function(q) { return q.chart_type === 'portfolio_avg' || q.id === 'portfolio_avg' })
+
+    var waterfallData    = []
+    var portfolioAvgData = []
+    var waterfallError   = null
+
+    if (waterfallQuery) {
+      try { waterfallData = await query(waterfallQuery.sql) } catch(err) { waterfallError = err.message }
+    }
+    if (portfolioAvgQuery) {
+      try { portfolioAvgData = await query(portfolioAvgQuery.sql) } catch(err) { console.warn('Portfolio avg query failed:', err.message) }
+    }
+
+    // Combine all results
+    var allQueryResults = []
+
+    // Pass 1 ranking query (shown as bar chart)
+    allQueryResults.push(Object.assign({}, pass1Query, { data: pass1Results, error: null }))
+
+    // Waterfall query with data + portfolio avg embedded
+    if (waterfallQuery) {
+      allQueryResults.push(Object.assign({}, waterfallQuery, {
+        data:          waterfallData,
+        portfolio_avg: portfolioAvgData.length ? portfolioAvgData[0] : null,
+        error:         waterfallError,
+      }))
+    }
+
+    // Generate narrative with full context
+    var allSuccessful = allQueryResults.filter(function(r) { return !r.error && r.data && r.data.length })
+    var dataSummary   = allSuccessful.map(function(r) {
+      return { title: r.title, chart_type: r.chart_type, row_count: r.data.length, top_rows: r.data.slice(0, 10) }
+    })
+
+    var narrativePrompt = [
+      '## TASK',
+      'Answer this BI question using the query results. Be specific with numbers and entity names.',
+      '',
+      '## QUESTION', question,
+      '## PERIOD', periodUsed, contextNote, mandatoryNote,
+      '## IDENTIFIED ENTITIES', entityList.join(', '),
+      '## TARGET KPI', targetKpi,
+      '## DEPENDENCY KPIs', depKpisStr,
+      '## QUERY RESULTS', JSON.stringify(dataSummary, null, 2),
+      '',
+      '## NARRATIVE INSTRUCTIONS FOR CAUSAL QUESTIONS',
+      '1. State the magnitude of change/gap in the target KPI for each identified entity with actual numbers.',
+      '2. For each dependency KPI that shows deviation from portfolio average, state its direction and magnitude and link it to the target KPI.',
+      '3. For dependency KPIs that did NOT deviate, explicitly rule them out.',
+      '4. Conclude with the most likely primary driver based on the data.',
+      '5. Frame all findings as correlations: "correlates with", "likely contributed to", "data suggests".',
+      '',
+      '## OUTPUT — JSON only',
+      '{"answer":"2-4 sentence answer with specific numbers","key_findings":["finding 1","finding 2"],"drivers":"1-2 sentences on primary drivers","investigate":["thing to check 1"],"data_limitation":"note if insufficient data, else empty string"}',
+    ].join('\n')
+
+    var narrativeRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4o', max_tokens: 1000, temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior BI analyst. Answer precisely using only data provided. Never fabricate numbers.' }, { role: 'user', content: narrativePrompt }] }),
+    })
+    var narrativeJson = await narrativeRes.json()
+    totalUsage.prompt_tokens     += narrativeJson.usage?.prompt_tokens     || 0
+    totalUsage.completion_tokens += narrativeJson.usage?.completion_tokens || 0
+    var narrative = null
+    if (narrativeRes.ok) { try { narrative = JSON.parse(narrativeJson.choices[0].message.content.replace(/```json|```/g, '').trim()) } catch(e) { narrative = null } }
+
+    return Response.json({
+      question, periodUsed, queries: allQueryResults, narrative,
+      dependentFields: dependencyKpis, twoPass: true,
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  // ── SINGLE-PASS FLOW (unchanged) ──────────────────────────────────────────
   var queryGenPrompt = [
     '## TASK',
     'Generate 1-4 SQL queries to answer this question from a BI dashboard.',
@@ -109,99 +406,31 @@ export async function POST(request) {
     '## QUESTION',
     question,
     '',
-    '## DATABASE',
-    'Table: ' + tbl + ' (real typed SQL columns — NOT JSONB)',
-    'Access fields directly: SELECT branch_name, SUM(revenue) FROM ' + tbl,
-    'NO data->>\'\' syntax. NO ::numeric casting on numeric columns.',
-    '',
-    '## TIME PERIOD',
-    'Year column: ' + yf + ' | Month column: ' + mf,
-    'Period label: ' + periodConds.label,
-    'Period SQL condition: ' + periodConds.cond,
-    contextNote,
-    mandatoryNote,
-    '',
-    '## FIELD CATALOGUE',
-    JSON.stringify(metaSummary, null, 2),
-    '',
-    '## FIELD PRIORITY',
-    'Prefer fields with business_priority = "high" when question is ambiguous.',
-    'Use favorable_direction when framing the narrative: "i" = increase good, "d" = decrease good.',
-    '',
-    '## SQL RULES',
-    '1. All field access is direct column name — SELECT branch_name, SUM(revenue). NO data->>\'\' syntax ever.',
-    '2. Numeric columns are already NUMERIC — no ::numeric casting needed.',
-   '2b. For columns with data_type "Integer" or "Float", NEVER filter with string values like "yes", "true", "Y", "active". Always use numeric values: 1 for true/active/present, 0 for false/inactive/absent.',
-    '3. Every query must include WHERE ' + periodConds.cond + CF,
-    '4. Use aggregation from catalogue (SUM for cumulative, AVG for point_in_time).',
-    '5. For ranking: ORDER BY value DESC LIMIT 10.',
-   '6. For trend (line/area): alias the time column as "period" and the metric as "value".',
-    '   Time label format: CONCAT(' + yf + ", \'-\', LPAD(CAST(" + mf + ' AS TEXT), 2, \'0\')) AS period',
-    '7. For bar/kpi: alias main value as "current_value", label as "label".',
-    '8. Date columns stored as TEXT in M/D/YY format. Use safe_date(column_name) for date operations.',
-    '   Weekday: TO_CHAR(safe_date(transaction_date), \'Day\'). DOW number: EXTRACT(DOW FROM safe_date(transaction_date)).',
-    '9. When grouping by a derived expression (e.g. TO_CHAR(safe_date(col), ...)) and ordering by a different derivation of the same column,',
-'   ALWAYS use a subquery — compute both expressions inside, then ORDER BY the alias in the outer query.',
-'   CORRECT: SELECT label, avg_val FROM (SELECT TO_CHAR(safe_date(col), \'Day\') AS label, EXTRACT(DOW FROM safe_date(col)) AS dow, AVG(metric) AS avg_val FROM tbl GROUP BY label, dow) sub ORDER BY dow ASC',
-'   WRONG: GROUP BY TO_CHAR(safe_date(col), \'Day\') ORDER BY EXTRACT(DOW FROM safe_date(col))',
-    '10. For "why"/"what caused"/"what drove" questions about a KPI:',
-'    Step 1 — identify upstream KPIs: check the dependencies field of the target KPI in the catalogue. These are the direct drivers.',
-'    Step 2 — generate a multi-KPI trend query showing the target KPI AND all its dependencies moving together over time in the same period. Use chart_type "line".',
-'    Step 3 — generate a dimensional breakdown of the target KPI by the highest-priority dimension. Use chart_type "bar".',
-'    Step 4 — if no dependencies listed, fall back to checking other KPIs with related definitions or similar names.',
-'    For the multi-KPI trend query, select the target KPI and each dependency as separate AVG columns aliased by their field name, grouped by period.',
-    '11. Derived KPIs: if calculation_logic is provided, use that formula directly. E.g. SUM(revenue)/NULLIF(SUM(client_count),0).',
-    '12. When results span multiple dimensions (region + branch), concatenate: branch_region || \' — \' || branch_name AS label.',
-    '13. When outer query selects from subquery with pre-aggregated columns, do NOT apply another aggregate on them.',
-    '14. For trend/weekly charts use chart_type "line" or "area". Weekly label: TO_CHAR(safe_date(date_col), \'IYYY-"W"IW\') AS period.',
-    '14b. For weekly trends, use calendar week format TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW) — ISO week causes Dec weeks to show as next year e.g. 2026-W01 for Dec 2025 data.',
-    '15. Entity name in question (e.g. "branch_01") is a VALUE to filter on: WHERE branch_name = \'branch_01\'.',
-   '16. Window functions (OVER/PARTITION BY) are NOT allowed in HAVING clauses. Always wrap in a subquery and filter in the outer WHERE.',
-'    CORRECT: SELECT label, val FROM (SELECT dim AS label, window_fn() AS val FROM tbl WHERE ... GROUP BY dim) sub WHERE val > threshold',
-'    WRONG: GROUP BY dim HAVING window_fn() > threshold',
-'16b. For percentage threshold questions (e.g. "more than X% of intervals"), use conditional aggregation in one pass — never correlated subqueries for per-entity totals.',
-'    CORRECT: SELECT label, current_value FROM (SELECT dim AS label, 100.0 * SUM(CASE WHEN condition THEN 1 ELSE 0 END) / COUNT(*) AS current_value FROM tbl WHERE period_filter GROUP BY dim) sub WHERE current_value >= threshold',
-'    WRONG: HAVING COUNT(*) * 100.0 / (SELECT COUNT(*) FROM tbl WHERE ... AND dim = outer.dim) >= threshold',
-    '17. For "historical comparison of top N entities" queries, always filter the trend query to only those top N entities using a subquery — never pull all entities across all periods as this creates unreadable charts.',
-'    CORRECT: WHERE entity_col IN (SELECT entity_col FROM tbl WHERE current_period_filter GROUP BY entity_col ORDER BY AGG(metric) DESC LIMIT N)',
-    '18. For multi-series trend queries (multiple entities over time), use chart_type "table" instead of "line" — line charts with more than 5 series are unreadable.',
-'    Also use chart_type "table" when the question asks for a ranked list with multiple columns of data.',
-    '20. ONLY use field names that exist in the field catalogue above. NEVER invent or assume fields like "revenue", "sales", "profit" that are not explicitly listed. If the question uses vague terms like "underperformed" or "best", map them to the most relevant KPI from the catalogue based on business_priority and type.',
+    promptBase,
     '',
     '## OUTPUT — JSON only',
-    '{"queries":[{"id":"q1","title":"title","chart_type":"bar|line|area|pie|donut|scatter|kpi","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"one sentence"}],"dependent_fields":[],"period_used":"' + periodConds.label + '"}',
+    '{"queries":[{"id":"q1","title":"title","chart_type":"bar|line|area|pie|donut|scatter|kpi|table","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"one sentence"}],"dependent_fields":[],"period_used":"' + periodConds.label + '"}',
   ].join('\n')
 
-  var queryGenRes = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 2000, temperature: 0.1, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. Direct column access — no JSONB. CRITICAL: only use field names from the field catalogue provided — never invent fields not listed there.'}, { role: 'user', content: queryGenPrompt }] }),
-  })
-  var queryGenJson = await queryGenRes.json()
-  if (!queryGenRes.ok) return Response.json({ error: (queryGenJson.error && queryGenJson.error.message) || 'Query generation failed.' }, { status: 500 })
-
   var queryGenParsed
-  try { queryGenParsed = JSON.parse(queryGenJson.choices[0].message.content.replace(/```json|```/g, '').trim()) } catch(e) { return Response.json({ error: 'Could not parse query generation response.' }, { status: 500 }) }
+  try {
+    queryGenParsed = await callOpenAI(
+      'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. Direct column access — no JSONB. CRITICAL: only use field names from the field catalogue — never invent fields.',
+      queryGenPrompt,
+      2000
+    )
+  } catch(err) {
+    return Response.json({ error: 'Query generation failed: ' + err.message }, { status: 500 })
+  }
 
-  var queries         = queryGenParsed.queries || []
+  var queries         = queryGenParsed.queries        || []
   var dependentFields = queryGenParsed.dependent_fields || []
-  var periodUsed      = queryGenParsed.period_used || periodConds.label
+  var periodUsed      = queryGenParsed.period_used    || periodConds.label
 
   if (!queries.length) return Response.json({ error: 'No queries generated. The question may reference fields not in the dataset.' }, { status: 400 })
 
-  // ── Step 2: Execute queries ───────────────────────────────────────────────
-  var queryResults = []
-  for (var i = 0; i < queries.length; i++) {
-    var q = queries[i]
-    try {
-      var rows = await query(q.sql)
-      queryResults.push(Object.assign({}, q, { data: rows, error: null }))
-    } catch(err) {
-      console.error('ask-question query error:', err.message, '\nSQL:', q.sql)
-      queryResults.push(Object.assign({}, q, { data: [], error: err.message }))
-    }
-  }
+  var queryResults = await executeQueries(queries)
 
-  // ── Step 3: Generate narrative ────────────────────────────────────────────
   var successfulResults = queryResults.filter(function(r) { return !r.error && r.data && r.data.length })
   var failedResults     = queryResults.filter(function(r) { return !!r.error || !r.data || !r.data.length })
 
@@ -215,12 +444,6 @@ export async function POST(request) {
   var narrativePrompt = [
     '## TASK',
     'Answer this BI question using only the query results provided. Be specific — use actual numbers and segment names.',
-    'For causal questions (why/what led to):',
-'  1. State the magnitude of change in the target KPI with actual numbers.',
-'  2. For each upstream/dependency KPI that also changed, state its direction and magnitude and link it to the target — e.g. "window_count dropped from 4.1 to 3.2 in the same period, which directly reduces available teller capacity and correlates with the BFI increase".',
-'  3. For KPIs that did NOT change, explicitly rule them out — e.g. "long_txn_count remained stable, so transaction length was not a factor".',
-'  4. Conclude with the most likely primary driver based on the data.',
-'  Frame all findings as correlations not proven causes: use "correlates with", "likely contributed to", "data suggests".',
     '',
     '## QUESTION', question,
     '## PERIOD', periodUsed, contextNote, mandatoryNote,
@@ -228,23 +451,29 @@ export async function POST(request) {
     failedResults.length ? '\n## NO DATA: ' + failedResults.map(function(r) { return r.title + (r.error ? ': ' + r.error : ': no rows') }).join(', ') : '',
     '## FIELD CONTEXT', 'Dependent fields: ' + dependentFields.join(', '),
     '',
+    '## NARRATIVE INSTRUCTIONS FOR CAUSAL QUESTIONS',
+    '1. State the magnitude of change in the target KPI with actual numbers.',
+    '2. For each upstream/dependency KPI that changed, state its direction and magnitude and link it to the target.',
+    '3. For KPIs that did NOT change, explicitly rule them out.',
+    '4. Conclude with the most likely primary driver.',
+    '5. Frame all findings as correlations: "correlates with", "likely contributed to", "data suggests".',
+    '',
     '## OUTPUT — JSON only',
     '{"answer":"2-4 sentence answer with specific numbers","key_findings":["finding 1","finding 2"],"drivers":"1-2 sentences on what drives the pattern","investigate":["thing to check 1","thing to check 2"],"data_limitation":"note if data insufficient, else empty string"}',
   ].join('\n')
 
   var narrativeRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST', headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 1000, temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior banking BI analyst. Answer precisely using only the data provided. Never fabricate numbers.' }, { role: 'user', content: narrativePrompt }] }),
+    body: JSON.stringify({ model: 'gpt-4o', max_tokens: 1000, temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Senior BI analyst. Answer precisely using only the data provided. Never fabricate numbers.' }, { role: 'user', content: narrativePrompt }] }),
   })
   var narrativeJson = await narrativeRes.json()
+  totalUsage.prompt_tokens     += narrativeJson.usage?.prompt_tokens     || 0
+  totalUsage.completion_tokens += narrativeJson.usage?.completion_tokens || 0
   var narrative = null
   if (narrativeRes.ok) { try { narrative = JSON.parse(narrativeJson.choices[0].message.content.replace(/```json|```/g, '').trim()) } catch(e) { narrative = null } }
 
-  var usage = {
-    prompt_tokens:     (queryGenJson.usage?.prompt_tokens || 0) + (narrativeJson.usage?.prompt_tokens || 0),
-    completion_tokens: (queryGenJson.usage?.completion_tokens || 0) + (narrativeJson.usage?.completion_tokens || 0),
-    model: 'gpt-4o',
-  }
-
-  return Response.json({ question, periodUsed, queries: queryResults, narrative, dependentFields, usage })
+  return Response.json({
+    question, periodUsed, queries: queryResults, narrative, dependentFields,
+    usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+  })
 }
