@@ -89,8 +89,7 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
     '21. For the Pass 1 ranking query, always use a single clean dimension column as the label — never concatenate columns. The label column must contain raw values that can be used directly in a subsequent WHERE filter.',
-    '22. For underperformance/overperformance questions, look for KPIs whose definition contains "PRIMARY PERFORMANCE INDICATOR" — use that as the ranking metric. If none found, fall back to the highest business_priority KPI with is_output=Y.',
-    '23.    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
+   
   ].join('\n')
 }
 
@@ -186,7 +185,17 @@ export async function POST(request) {
 
     // ── Pass 1: Entity identification ───────────────────────────────────────
     var pass1Prompt = [
-      '## TASK',
+  '## CRITICAL — KPI SELECTION (read this first)',
+  'If the question mentions underperformance, overperformance, best, worst, top, bottom:',
+  '  STEP 1: Scan field catalogue definitions for "PRIMARY PERFORMANCE INDICATOR" → use that KPI',
+  '  STEP 2: If not found → use KPI with business_priority=High and is_output=Y',
+  '  STEP 3: NEVER pick a KPI just because it sounds relevant — only use the rules above',
+  '',
+  '## CRITICAL — LABEL COLUMN (read this first)',
+  'The label column in Pass 1 must be a SINGLE raw column value (e.g. branch_name).',
+  'NEVER concatenate columns (e.g. branch_id || branch_name). The label values will be used directly in a WHERE IN filter in Pass 2.',
+  '',
+  '## TASK',
       'This is a two-part question. For Pass 1, generate ONLY ONE ranking SQL query that identifies the specific entities (e.g. branches, regions, segments) relevant to this question.',
       'Do NOT generate why/causal queries yet — just the ranking query.',
       '',
