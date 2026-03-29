@@ -88,35 +88,9 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '    Also use chart_type "table" for ranked lists with multiple columns.',
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
-    '21. For the Pass 1 ranking query, always use a single clean dimension column as the label — never concatenate columns. The label column must contain raw values that can be used directly in a subsequent WHERE filter.',
-   
+    '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
   ].join('\n')
 }
-
-function selectPerformanceKpi(metadata) {
-  // Step 1 — look for PRIMARY PERFORMANCE INDICATOR in definition
-  var primary = metadata.find(function(m) {
-    return m.is_output !== 'N' &&
-      m.definition &&
-      m.definition.toUpperCase().includes('PRIMARY PERFORMANCE INDICATOR')
-  })
-  if (primary) return primary.field_name
-
-  // Step 2 — fall back to highest priority output KPI
-  var highPriority = metadata.filter(function(m) {
-    return m.is_output !== 'N' &&
-      (m.type === 'kpi' || m.type === 'derived_kpi') &&
-      (m.business_priority || '').toLowerCase() === 'high'
-  })
-  if (highPriority.length) return highPriority[0].field_name
-
-  // Step 3 — any output KPI
-  var anyKpi = metadata.find(function(m) {
-    return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi')
-  })
-  return anyKpi ? anyKpi.field_name : null
-}
-
 
 export async function POST(request) {
   var apiKey = process.env.OPENAI_API_KEY
@@ -205,75 +179,88 @@ export async function POST(request) {
     return results
   }
 
-  // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
+    // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
   if (isTwoPassQuestion(question)) {
 
-    var detectedKpi = selectPerformanceKpi(metadata)
-    // ── Pass 1: Entity identification ───────────────────────────────────────
-   var pass1Prompt = [
-  '## YOUR ONLY JOB',
-  'Identify which entities underperformed/overperformed by writing ONE ranking SQL query.',
-  '',
-  '## RANKING KPI — NON NEGOTIABLE',detectedKpi
-  ? 'You MUST use "' + detectedKpi + '" as the ranking metric. Do not use any other KPI.'
-  : 'Use the highest business_priority KPI with is_output=Y from the catalogue.',
-'',
-  '',
-  '## STEP 2 — PICK THE ENTITY DIMENSION',
-  '  Use the highest priority dimension field (e.g. branch, region, segment)',
-  '  Use a SINGLE raw column as label — NEVER concatenate columns',
-  '  The label values will be used in a WHERE IN filter later so must be raw values',
-  '',
-  '## QUESTION',
-  question,
-  '',
-  '## FIELD CATALOGUE (use ONLY these fields)',
-  JSON.stringify(metaSummary, null, 2),
-  '',
-  '## TIME PERIOD',
-  'Year column: ' + yf + ' | Month column: ' + mf,
-  'Period condition: ' + periodConds.cond,
-  mandatoryNote,
-  '',
-  '## SQL RULES (only these apply to Pass 1)',
-  '1. Table is: ' + tbl,
-  '2. Direct column access — no JSONB, no casting',
-  '3. Include WHERE ' + periodConds.cond + CF,
-  '4. GROUP BY the entity dimension, ORDER BY the ranking KPI, LIMIT decided by question context',
-  '',
-  '## OUTPUT — JSON only',
-  '{"query":{"id":"pass1_ranking","title":"...","chart_type":"bar","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"..."},"target_kpi":"field_name_of_ranking_kpi","entity_field":"field_name_of_entity_dimension","period_used":"' + periodConds.label + '"}',
-].join('\n')
+    // ── Pass 1: Deterministic entity identification (no LLM) ────────────────
+    // Step 1 — select performance KPI from metadata
+    var targetKpi = (function() {
+      var primary = metadata.find(function(m) {
+        return m.is_output !== 'N' && m.definition && m.definition.toUpperCase().includes('PRIMARY PERFORMANCE INDICATOR')
+      })
+      if (primary) return primary.field_name
+      var high = metadata.filter(function(m) {
+        return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi') && (m.business_priority || '').toLowerCase() === 'high'
+      })
+      if (high.length) return high[0].field_name
+      var any = metadata.find(function(m) { return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi') })
+      return any ? any.field_name : null
+    })()
 
-    var pass1Parsed
-    try {
-      pass1Parsed = await callOpenAI(
-        'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. ONLY use fields from the catalogue. Never invent fields.',
-        pass1Prompt,
-        800
-      )
-    } catch(err) {
+    // Step 2 — select entity dimension from metadata
+    var entityField = (function() {
+      var dims = metadata.filter(function(m) {
+        return m.is_output !== 'N' && m.type === 'dimension' &&
+          !/year|month|day|date|sort|order|current_|duration|interval/i.test(m.field_name)
+      })
+      var high = dims.find(function(m) { return (m.business_priority || '').toLowerCase() === 'high' })
+      return high ? high.field_name : (dims[0] ? dims[0].field_name : null)
+    })()
+
+    if (!targetKpi || !entityField) {
       return Response.json({
         question, error: null,
-        queries: [{ id: 'pass1_error', title: 'Entity Identification Failed', chart_type: 'error', data: [], error: 'Could not identify the entities to analyse. Try rephrasing — e.g. "which branches had the lowest BFI score in ' + periodConds.label + ' and why?"' }],
+        queries: [{ id: 'pass1_error', title: 'Setup Error', chart_type: 'error', data: [], error: 'Could not identify performance KPI or entity dimension from metadata. Make sure your primary KPI has "PRIMARY PERFORMANCE INDICATOR" in its definition.' }],
         narrative: null, periodUsed: periodConds.label,
         usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
       })
     }
 
-    // Execute Pass 1 query
-    var pass1Query   = pass1Parsed.query
-    var targetKpi    = pass1Parsed.target_kpi    || ''
-    var entityField  = pass1Parsed.entity_field  || 'label'
-    var periodUsed   = pass1Parsed.period_used   || periodConds.label
-    var pass1Results = []
+    var kpiMeta   = metadata.find(function(m) { return m.field_name === targetKpi })
+    var favDir    = kpiMeta ? (kpiMeta.favorable_direction || 'i') : 'i'
+    var kpiUnit   = kpiMeta ? (kpiMeta.unit || '') : ''
+    var kpiDisplay = kpiMeta ? (kpiMeta.display_name || targetKpi) : targetKpi
+    var periodUsed = periodConds.label
 
+    // Step 3 — detect over vs underperformance from question
+    var isOver = /overperform|best|top|highest|outperform/i.test(question)
+    // For 'i' (higher=better): underperform = below avg (HAVING < avg), overperform = above avg (HAVING > avg)
+    // For 'd' (lower=better):  underperform = above avg (HAVING > avg), overperform = below avg (HAVING < avg)
+    var havingOp = (favDir === 'i' && !isOver) || (favDir === 'd' && isOver) ? '<' : '>'
+    var orderDir = havingOp === '<' ? 'ASC' : 'DESC'
+
+    // Step 4 — build Pass 1 SQL deterministically
+    var pass1SQL = [
+      'SELECT ' + entityField + ' AS label, AVG(' + targetKpi + ') AS current_value',
+      'FROM ' + tbl,
+      'WHERE ' + periodConds.cond + CF,
+      'AND ' + entityField + ' IS NOT NULL',
+      'GROUP BY ' + entityField,
+      'HAVING AVG(' + targetKpi + ') ' + havingOp + ' (',
+      '  SELECT AVG(' + targetKpi + ') FROM ' + tbl + ' WHERE ' + periodConds.cond + CF,
+      ')',
+      'ORDER BY current_value ' + orderDir,
+    ].join(' ')
+
+    var pass1Query = {
+      id: 'pass1_ranking',
+      title: (isOver ? 'Outperforming' : 'Underperforming') + ' Entities by ' + kpiDisplay,
+      chart_type: 'bar',
+      sql: pass1SQL,
+      label_key: 'label',
+      value_key: 'current_value',
+      current_key: 'current_value',
+      unit: kpiUnit,
+      insight: 'Entities ' + (havingOp === '<' ? 'below' : 'above') + ' portfolio average ' + kpiDisplay,
+    }
+
+    var pass1Results = []
     try {
-      pass1Results = await query(pass1Query.sql)
+      pass1Results = await query(pass1SQL)
     } catch(err) {
       return Response.json({
         question, error: null,
-        queries: [Object.assign({}, pass1Query, { data: [], error: 'Pass 1 SQL error: ' + err.message + '. Try rephrasing your question with explicit field names.' })],
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'Pass 1 SQL error: ' + err.message })],
         narrative: null, periodUsed,
         usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
       })
@@ -282,14 +269,14 @@ export async function POST(request) {
     if (!pass1Results || !pass1Results.length) {
       return Response.json({
         question, error: null,
-        queries: [Object.assign({}, pass1Query, { data: [], error: 'No entities found for this question in ' + periodUsed + '. Check that data exists for this period.' })],
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'No entities found ' + (havingOp === '<' ? 'below' : 'above') + ' portfolio average for ' + kpiDisplay + ' in ' + periodUsed + '.' })],
         narrative: null, periodUsed,
         usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
       })
     }
 
     // Extract entity list from Pass 1 results
-    var entityList = pass1Results.map(function(r) { return r[pass1Query.label_key || 'label'] || r['label'] }).filter(Boolean)
+    var entityList = pass1Results.map(function(r) { return r['label'] }).filter(Boolean)
 
     // Find target KPI dependencies from metadata
     var targetKpiMeta   = metadata.find(function(m) { return m.field_name === targetKpi })
@@ -308,11 +295,6 @@ export async function POST(request) {
     var pass1ResultsStr = JSON.stringify(pass1Results.slice(0, 10), null, 2)
 
     var pass2Prompt = [
-      '## CRITICAL — PORTFOLIO AVERAGE QUERY',
-'Query 2 must be a simple single-row SELECT with no GROUP BY and absolutely no UNION.',
-'It selects only AVG() of numeric KPI columns. No entity column. No label column.',
-'NEVER combine with Query 1 using UNION.',
-'',
       '## TASK',
       'This is Pass 2 of a two-pass analysis. Pass 1 has already identified the key entities.',
       'Now generate causal/why queries to explain WHY these entities performed the way they did.',
@@ -335,10 +317,10 @@ export async function POST(request) {
       'Generate exactly 2 queries:',
       '',
       'QUERY 1 — Waterfall data query:',
-      'Fetch the target KPI AND all dependency KPIs for:',
-      '  a) Each identified entity (WHERE ' + entityField + ' IN (' + entityListStr + '))',
-      '  b) Portfolio average (all entities, same period) — use a UNION or separate query',
-      'The easiest approach: one query with GROUP BY ' + entityField + ' that includes a row for each entity PLUS use a second query for portfolio avg.',
+      'Fetch the target KPI AND all dependency KPIs for the identified entities only.',
+      'WHERE ' + entityField + ' IN (' + entityListStr + ')',
+      'GROUP BY ' + entityField,
+      'IMPORTANT: Use AVG for ALL KPI columns — this is a per-entity behavioural comparison that normalises for different numbers of intervals per entity.',
       'Use chart_type: "waterfall"',
       'Include these extra fields in the query response:',
       '  entity_field: "' + entityField + '"',
@@ -347,13 +329,13 @@ export async function POST(request) {
       '  dependency_kpis: ' + JSON.stringify(dependencyKpis),
       '',
       'QUERY 2 — Portfolio average query:',
-'SELECT AVG of the target KPI and all dependency KPIs across ALL entities for the same period.',
-'This must be a completely standalone SELECT with no GROUP BY and no entity filter.',
-'Do NOT use UNION with Query 1. Do NOT include any entity identifier column.',
-'The result will be a single row of averages used as the baseline.',
-'Use chart_type: "portfolio_avg" and id: "portfolio_avg".',
-'CORRECT: SELECT AVG(target_kpi) AS target_kpi, AVG(dep1) AS dep1, AVG(dep2) AS dep2 FROM tbl WHERE period_filter AND mandatory_filters',
-'WRONG: UNION SELECT "Portfolio Average" AS entity_col, AVG(...) — never mix entity labels with averages',
+      'SELECT AVG of the target KPI and all dependency KPIs across ALL entities for the same period.',
+      'This must be a completely standalone SELECT with no GROUP BY and no entity filter.',
+      'Do NOT use UNION with Query 1. Do NOT include any entity identifier column.',
+      'IMPORTANT: Use AVG for ALL KPI columns — same as Query 1.',
+      'Use chart_type: "portfolio_avg" and id: "portfolio_avg".',
+      'CORRECT: SELECT AVG(' + targetKpi + ') AS ' + targetKpi + ' FROM ' + tbl + ' WHERE ' + periodConds.cond + CF,
+      'WRONG: UNION SELECT \'Portfolio Average\' AS ' + entityField + ' — never mix entity labels with averages',
       '',
       '## PASS 2 OUTPUT — JSON only',
       '{"queries":[{"id":"waterfall_data","title":"...","chart_type":"waterfall","sql":"SELECT ...","entity_field":"' + entityField + '","entity_list":' + JSON.stringify(entityList) + ',"target_kpi":"' + targetKpi + '","dependency_kpis":' + JSON.stringify(dependencyKpis) + ',"label_key":"' + entityField + '","unit":"","insight":"..."},{"id":"portfolio_avg","title":"Portfolio Average","chart_type":"portfolio_avg","sql":"SELECT AVG(...) ...","unit":"","insight":""}],"period_used":"' + periodUsed + '"}',
