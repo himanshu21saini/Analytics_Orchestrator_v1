@@ -93,6 +93,31 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
   ].join('\n')
 }
 
+function selectPerformanceKpi(metadata) {
+  // Step 1 — look for PRIMARY PERFORMANCE INDICATOR in definition
+  var primary = metadata.find(function(m) {
+    return m.is_output !== 'N' &&
+      m.definition &&
+      m.definition.toUpperCase().includes('PRIMARY PERFORMANCE INDICATOR')
+  })
+  if (primary) return primary.field_name
+
+  // Step 2 — fall back to highest priority output KPI
+  var highPriority = metadata.filter(function(m) {
+    return m.is_output !== 'N' &&
+      (m.type === 'kpi' || m.type === 'derived_kpi') &&
+      (m.business_priority || '').toLowerCase() === 'high'
+  })
+  if (highPriority.length) return highPriority[0].field_name
+
+  // Step 3 — any output KPI
+  var anyKpi = metadata.find(function(m) {
+    return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi')
+  })
+  return anyKpi ? anyKpi.field_name : null
+}
+
+
 export async function POST(request) {
   var apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return Response.json({ error: 'OPENAI_API_KEY not set.' }, { status: 500 })
@@ -183,16 +208,16 @@ export async function POST(request) {
   // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
   if (isTwoPassQuestion(question)) {
 
+    var detectedKpi = selectPerformanceKpi(metadata)
     // ── Pass 1: Entity identification ───────────────────────────────────────
    var pass1Prompt = [
   '## YOUR ONLY JOB',
   'Identify which entities underperformed/overperformed by writing ONE ranking SQL query.',
   '',
-  '## STEP 1 — PICK THE RANKING KPI (do this first, strictly in order)',
-  '  1. Find any KPI in the catalogue whose definition contains "PRIMARY PERFORMANCE INDICATOR" → use it',
-  '  2. If none found → use the KPI with business_priority = "High" and is_output = "Y"',
-  '  3. NEVER use a field from the "dependencies" column as the ranking KPI',
-  '  4. NEVER invent a field not in the catalogue',
+  '## RANKING KPI — NON NEGOTIABLE',detectedKpi
+  ? 'You MUST use "' + detectedKpi + '" as the ranking metric. Do not use any other KPI.'
+  : 'Use the highest business_priority KPI with is_output=Y from the catalogue.',
+'',
   '',
   '## STEP 2 — PICK THE ENTITY DIMENSION',
   '  Use the highest priority dimension field (e.g. branch, region, segment)',
