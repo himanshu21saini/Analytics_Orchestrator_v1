@@ -293,6 +293,207 @@ function WaterfallChart({ result, metadata }) {
   )
 }
 
+// ── WaterfallChart component ──────────────────────────────────────────────────
+// Add this function BEFORE the main component (AskOnlyView or Dashboard)
+// It needs access to the metadata prop to look up favorable_direction
+
+function WaterfallChart({ result, metadata }) {
+  var [selectedEntity, setSelectedEntity] = useState(null)
+
+  var entityField   = result.entity_field   || 'label'
+  var entityList    = result.entity_list    || []
+  var targetKpi     = result.target_kpi     || ''
+  var depKpis       = result.dependency_kpis || []
+  var data          = result.data           || []
+  var portfolioAvg  = result.portfolio_avg  || null
+
+  // Default to first entity
+  var activeEntity = selectedEntity || entityList[0]
+
+  // Get favorable_direction from metadata for a field
+  function getFavorableDir(fieldName) {
+    var m = metadata && metadata.find(function(m) { return m.field_name === fieldName })
+    return m ? (m.favorable_direction || 'i') : 'i'
+  }
+
+  // Get display name from metadata
+  function getDisplayName(fieldName) {
+    var m = metadata && metadata.find(function(m) { return m.field_name === fieldName })
+    return m ? (m.display_name || fieldName) : fieldName
+  }
+
+  // Compute waterfall bars for selected entity
+  function computeWaterfall() {
+    if (!portfolioAvg || !data.length || !activeEntity) return null
+
+    var entityRow = data.find(function(r) { return String(r[entityField]) === String(activeEntity) })
+    if (!entityRow) return null
+
+    var targetGap      = (parseFloat(entityRow[targetKpi]) || 0) - (parseFloat(portfolioAvg[targetKpi]) || 0)
+    var portfolioTarget = parseFloat(portfolioAvg[targetKpi]) || 0
+    var entityTarget    = parseFloat(entityRow[targetKpi])    || 0
+
+    // Compute normalised deviation for each dependency KPI
+    var deviations = depKpis.map(function(kpi) {
+      var entityVal    = parseFloat(entityRow[kpi])    || 0
+      var portfolioVal = parseFloat(portfolioAvg[kpi]) || 0
+      if (portfolioVal === 0) return null
+      var rawDev    = entityVal - portfolioVal
+      var normDevPct = rawDev / Math.abs(portfolioVal)  // as fraction
+      return { kpi, rawDev, normDevPct: normDevPct, entityVal, portfolioVal }
+    }).filter(Boolean)
+
+    if (!deviations.length) return null
+
+    // Total absolute normalised deviation
+    var totalAbsDev = deviations.reduce(function(sum, d) { return sum + Math.abs(d.normDevPct) }, 0)
+    if (totalAbsDev === 0) return null
+
+    // Each dep's share of the BFI gap
+    var bars = deviations.map(function(d) {
+      var share        = Math.abs(d.normDevPct) / totalAbsDev
+      var contribution = share * targetGap
+      var favDir       = getFavorableDir(d.kpi)
+      // Determine if this deviation is unfavourable
+      // favDir 'i' = higher is better → negative deviation is bad
+      // favDir 'd' = lower is better  → positive deviation is bad
+      var isUnfavourable = favDir === 'i' ? d.rawDev < 0 : d.rawDev > 0
+      return {
+        kpi:          d.kpi,
+        display:      getDisplayName(d.kpi),
+        contribution: contribution,
+        normDevPct:   d.normDevPct,
+        entityVal:    d.entityVal,
+        portfolioVal: d.portfolioVal,
+        isUnfavourable,
+      }
+    }).sort(function(a, b) { return Math.abs(b.contribution) - Math.abs(a.contribution) })
+
+    return { portfolioTarget, entityTarget, targetGap, bars }
+  }
+
+  var waterfall = computeWaterfall()
+
+  if (!portfolioAvg) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Portfolio average data not available for driver analysis.</p>
+      </div>
+    )
+  }
+
+  if (!data.length) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{result.error || 'No data available.'}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '18px 20px', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
+
+      {/* Header */}
+      <div style={{ marginBottom: 14 }}>
+        <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)' }}>{result.title || 'Driver Analysis'}</p>
+        {result.insight && <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.4 }}>{result.insight}</p>}
+      </div>
+
+      {/* Entity selector */}
+      {entityList.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', alignSelf: 'center', marginRight: 4 }}>Focus on:</span>
+          {entityList.map(function(entity) {
+            var isActive = String(entity) === String(activeEntity)
+            return (
+              <button key={entity} onClick={function() { setSelectedEntity(String(entity)) }}
+                style={{ padding: '4px 12px', borderRadius: 'var(--radius-sm)', fontSize: 11, fontWeight: isActive ? 600 : 400, cursor: 'pointer', fontFamily: 'var(--font-body)', border: '1px solid ' + (isActive ? 'var(--accent-border)' : 'var(--border)'), background: isActive ? 'var(--accent-dim)' : 'transparent', color: isActive ? 'var(--text-accent)' : 'var(--text-secondary)', transition: 'all var(--transition)' }}>
+                {entity}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Waterfall bars */}
+      {waterfall ? (
+        <div>
+          {/* Summary row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)' }}>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)', marginBottom: 3 }}>Portfolio Avg</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{waterfall.portfolioTarget.toFixed(2)}</p>
+            </div>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)', margin: '0 16px' }} />
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)', marginBottom: 3 }}>{activeEntity}</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: waterfall.targetGap < 0 ? '#E05555' : '#10C48A', fontFamily: 'var(--font-mono)' }}>{waterfall.entityTarget.toFixed(2)}</p>
+            </div>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)', margin: '0 16px' }} />
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)', marginBottom: 3 }}>Gap</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: waterfall.targetGap < 0 ? '#E05555' : '#10C48A', fontFamily: 'var(--font-mono)' }}>
+                {waterfall.targetGap > 0 ? '+' : ''}{waterfall.targetGap.toFixed(2)}
+              </p>
+            </div>
+          </div>
+
+          {/* Contribution bars */}
+          <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
+            Driver Analysis — {getDisplayName(targetKpi)}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {waterfall.bars.map(function(bar) {
+              var maxContrib = Math.max.apply(null, waterfall.bars.map(function(b) { return Math.abs(b.contribution) }))
+              var barWidth   = maxContrib > 0 ? (Math.abs(bar.contribution) / maxContrib * 100) : 0
+              var barColor   = bar.isUnfavourable ? '#E05555' : '#10C48A'
+              var barColorA  = bar.isUnfavourable ? 'rgba(224,85,85,0.2)' : 'rgba(16,196,138,0.2)'
+              var devSign    = bar.normDevPct > 0 ? '+' : ''
+              return (
+                <div key={bar.kpi}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', flex: 1 }}>{bar.display}</span>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                        {bar.entityVal.toFixed(2)} vs {bar.portfolioVal.toFixed(2)} avg
+                        <span style={{ marginLeft: 6, color: bar.isUnfavourable ? '#E05555' : '#10C48A' }}>({devSign}{(bar.normDevPct * 100).toFixed(1)}%)</span>
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: barColor, fontFamily: 'var(--font-mono)', minWidth: 52, textAlign: 'right' }}>
+                        {bar.contribution > 0 ? '+' : ''}{bar.contribution.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: 'var(--surface-3)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: barWidth + '%', background: barColor, opacity: 0.7, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 16, marginTop: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: '#E05555' }} />
+              <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Unfavourable deviation</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: '#10C48A' }} />
+              <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Favourable deviation</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', textAlign: 'center', padding: '20px 0' }}>
+          Could not compute driver analysis — dependency KPI data may be missing.
+          {depKpis.length === 0 && ' Add dependencies to the "' + targetKpi + '" field in your metadata to enable this view.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function AskOnlyView({ session }) {
   var datasetId        = session.datasetId
   var metadata         = session.metadata         || []
