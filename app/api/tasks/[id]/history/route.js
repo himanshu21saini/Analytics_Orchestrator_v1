@@ -1,4 +1,4 @@
-import { query } from '../../../../lib/db'
+import { query } from '../../../../../lib/db'
 
 export async function PATCH(request, { params }) {
   var taskId = params.id
