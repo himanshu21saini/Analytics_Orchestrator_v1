@@ -626,7 +626,17 @@ if (ct === 'waterfall') {
                 onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
                 onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
               >
-                <div style={{ position: 'relative' }}>
+       
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
+                </svg>
+                Ask
+              </button>
+            </div>
+
+                     <div style={{ position: 'relative' }}>
   <button onClick={function() { setShowTrackMenu(function(v) { return !v }) }}
     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)', border: '1px solid rgba(16,196,138,0.3)', borderRadius: 'var(--radius-md)', color: '#10C48A', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
     onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.2)' }}
@@ -657,14 +667,6 @@ if (ct === 'waterfall') {
     </div>
   )}
 </div>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
-                </svg>
-                Ask
-              </button>
-            </div>
           </div>
 
           {tokenCalls.length > 0 && (
