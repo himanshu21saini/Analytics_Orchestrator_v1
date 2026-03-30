@@ -669,12 +669,14 @@ if (ct === 'waterfall') {
   </button>
 
 </div>
-          {tokenCalls.length > 0 && (
+           {tokenCalls.length > 0 && (
             <div className="prism-print-hide" style={{ marginTop: 10 }}>
               <TokenMeter calls={tokenCalls} />
             </div>
           )}
         </div>
+      </div>
+      )}
       
 
       {prefs.decisions !== false && decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
