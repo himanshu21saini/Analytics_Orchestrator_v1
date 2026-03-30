@@ -21,18 +21,48 @@ function FieldRow({ label, children }) {
   )
 }
 
-function DimFilterRow({ index, filter, dimensions, onUpdate, onRemove }) {
+function DimFilterRow({ index, filter, dimensions, datasetId, onUpdate, onRemove }) {
+  var [options,  setOptions]  = useState([])
+  var [loading,  setLoading]  = useState(false)
+
   var inputStyle = { width: '100%', padding: '7px 10px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', outline: 'none' }
+
+  async function handleFieldChange(field) {
+    onUpdate(index, 'field', field)
+    onUpdate(index, 'value', '')
+    if (!field || !datasetId) return
+    setLoading(true)
+    try {
+      var res  = await fetch('/api/distinct-values?datasetId=' + datasetId + '&field=' + field)
+      var json = await res.json()
+      setOptions(json.values || [])
+    } catch (e) { setOptions([]) }
+    setLoading(false)
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 6, marginBottom: 6 }}>
-      <select value={filter.field} onChange={function(e) { onUpdate(index, 'field', e.target.value) }} style={inputStyle}>
+      <select value={filter.field} onChange={function(e) { handleFieldChange(e.target.value) }} style={inputStyle}>
         <option value="">Select dimension</option>
         {dimensions.map(function(d) {
           return <option key={d.field_name} value={d.field_name}>{d.display_name || d.field_name}</option>
         })}
       </select>
-      <input type="text" placeholder="Segment value" value={filter.value}
-        onChange={function(e) { onUpdate(index, 'value', e.target.value) }} style={inputStyle} />
+      {loading
+        ? <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-tertiary)' }}>
+            <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+            <span style={{ fontSize: 11 }}>Loading...</span>
+          </div>
+        : options.length > 0
+          ? <select value={filter.value} onChange={function(e) { onUpdate(index, 'value', e.target.value) }} style={inputStyle}>
+              <option value="">Select value</option>
+              {options.map(function(v) { return <option key={v} value={v}>{v}</option> })}
+            </select>
+          : <input type="text" placeholder="Segment value" value={filter.value}
+              onChange={function(e) { onUpdate(index, 'value', e.target.value) }}
+              style={inputStyle}
+            />
+      }
       <button onClick={function() { onRemove(index) }}
         style={{ width: 28, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid rgba(224,85,85,0.2)', borderRadius: 'var(--radius-sm)', color: 'var(--red-text)', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>
         ×
@@ -123,6 +153,7 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
           createdValue:     resolvedValue,
           direction:        selKpiMeta ? (selKpiMeta.favorable_direction || 'i') : 'i',
           note:             note.trim() || null,
+          mandatoryFilters: session.mandatoryFilters || [],
         }),
       })
       var json = await res.json()
@@ -198,8 +229,8 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
           {/* Dimension filters */}
           <FieldRow label="Segment filters">
             {dimFilters.map(function(f, i) {
-              return <DimFilterRow key={i} index={i} filter={f} dimensions={dimensions} onUpdate={handleDimUpdate} onRemove={handleDimRemove} />
-            })}
+      <DimFilterRow key={i} index={i} filter={f} dimensions={dimensions} datasetId={session.datasetId} onUpdate={handleDimUpdate} onRemove={handleDimRemove} />      
+      })}
             <button onClick={handleAddDim}
               style={{ fontSize: 10, padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontFamily: 'var(--font-body)', border: '1px solid var(--accent-border)', background: 'var(--accent-dim)', color: 'var(--text-accent)', transition: 'all var(--transition)', marginTop: 2 }}>
               + Add filter
