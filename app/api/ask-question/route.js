@@ -88,9 +88,7 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '    Also use chart_type "table" for ranked lists with multiple columns.',
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
-    '21. For improvement/decline questions across periods, always check favorable_direction from the catalogue before deciding the comparison direction.',
-'    favorable_direction = "i": improvement means the value INCREASED from old to new period → HAVING new_val > old_val',
-'    favorable_direction = "d": improvement means the value DECREASED from old to new period → HAVING new_val < old_val',
+   
     '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
   ].join('\n')
 }
