@@ -667,7 +667,7 @@ if (ct === 'waterfall') {
       <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
      </svg>
           </button>
-        </div>
+     
       </div>
       </div>
 
