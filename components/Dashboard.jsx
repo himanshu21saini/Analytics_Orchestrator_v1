@@ -154,7 +154,7 @@ function WaterfallChart({ result, metadata }) {
   if (!portfolioAvg) {
     return (
       <div style={{ padding: '20px', textAlign: 'center' }}>
-        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Portfolio average data not available for waterfall computation.</p>
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>Portfolio average data not available for driver analysis.</p>
       </div>
     )
   }
@@ -173,7 +173,7 @@ function WaterfallChart({ result, metadata }) {
 
       {/* Header */}
       <div style={{ marginBottom: 14 }}>
-        <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)' }}>{result.title || 'Causal Analysis'}</p>
+        <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)' }}>{result.title || 'Driver Analysis'}</p>
         {result.insight && <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', marginTop: 3, fontFamily: 'var(--font-body)', lineHeight: 1.4 }}>{result.insight}</p>}
       </div>
 
@@ -218,7 +218,7 @@ function WaterfallChart({ result, metadata }) {
 
           {/* Contribution bars */}
           <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
-            Contribution to gap — {getDisplayName(targetKpi)}
+            Driver Analysis — {getDisplayName(targetKpi)}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {waterfall.bars.map(function(bar) {
@@ -263,13 +263,14 @@ function WaterfallChart({ result, metadata }) {
         </div>
       ) : (
         <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', textAlign: 'center', padding: '20px 0' }}>
-          Could not compute waterfall — dependency KPI data may be missing.
+          Could not compute driver analysis — dependency KPI data may be missing.
           {depKpis.length === 0 && ' Add dependencies to the "' + targetKpi + '" field in your metadata to enable this view.'}
         </p>
       )}
     </div>
   )
 }
+
 
 export default function Dashboard({ session }) {
   var questionPanelRef = useRef(null)
