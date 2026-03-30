@@ -13,8 +13,9 @@ import WhatIfDrawer from './WhatIfDrawer'
 import TrendExplorer from './TrendExplorer'
 import TokenMeter from './TokenMeter'
 import CoveragePanel from './CoveragePanel'
-import TaskPanel from './TaskPanel'
+
 import CreateTaskModal from './CreateTaskModal'
+import TaskTracker from './TaskTracker'
 
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 var PA = ['rgba(0,200,240,0.5)','rgba(43,127,227,0.5)','rgba(0,180,160,0.5)','rgba(123,143,240,0.5)','rgba(240,160,48,0.5)','rgba(155,127,227,0.5)','rgba(16,196,138,0.5)','rgba(224,85,85,0.5)']
@@ -280,7 +281,7 @@ function WaterfallChart({ result, metadata }) {
 }
 
 
-export default function Dashboard({ session }) {
+export default function Dashboard({ session, onReset, onViewTasks }) {
   var questionPanelRef = useRef(null)
 
   var [summaryState,   setSummaryState]   = useState('idle')
@@ -291,9 +292,9 @@ export default function Dashboard({ session }) {
   var [decisionError,  setDecisionError]  = useState('')
   var [whatifQuery,    setWhatifQuery]    = useState(null)
 
-  var [trackModalOpen,   setTrackModalOpen]   = useState(false)
-var [trackPrefill,     setTrackPrefill]     = useState(null)
-var [taskPanelRefresh, setTaskPanelRefresh] = useState(0)
+var [trackModalOpen,  setTrackModalOpen]  = useState(false)
+var [trackPrefill,    setTrackPrefill]    = useState(null)
+var [showTrackMenu,   setShowTrackMenu]   = useState(false)
   
   var [tokenCalls, setTokenCalls] = useState(function() {
     if (session.initialUsage) {
@@ -625,6 +626,37 @@ if (ct === 'waterfall') {
                 onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
                 onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
               >
+                <div style={{ position: 'relative' }}>
+  <button onClick={function() { setShowTrackMenu(function(v) { return !v }) }}
+    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)', border: '1px solid rgba(16,196,138,0.3)', borderRadius: 'var(--radius-md)', color: '#10C48A', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
+    onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.2)' }}
+    onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)' }}
+  >
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+      <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M5.5 3v2.5l1.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+    Track KPI
+  </button>
+  {showTrackMenu && (
+    <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', zIndex: 200, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+      <button onClick={function() { setShowTrackMenu(false); setTrackPrefill(null); setTrackModalOpen(true) }}
+        style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 8 }}
+        onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--surface-2)' }}
+        onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+      >
+        <span style={{ color: 'var(--text-accent)' }}>+</span> Track New KPI
+      </button>
+      <button onClick={function() { setShowTrackMenu(false); onViewTasks() }}
+        style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 8 }}
+        onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--surface-2)' }}
+        onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+      >
+        <span style={{ color: '#10C48A' }}>↗</span> View All Tasks
+      </button>
+    </div>
+  )}
+</div>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                   <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
                   <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
@@ -707,10 +739,7 @@ var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
         onQuestionQueries={function(qs) { setQuestionSQLCache(function(prev) { return prev.concat(qs) }) }}
       />
 
-      <TaskPanel
-  key={taskPanelRefresh}
-  session={session}
-/>
+     
       {prefs.coveragePanel !== false && <CoveragePanel coverageData={session.coverageData} />}
 
       <WhatIfDrawer query={whatifQuery || {}} metadata={metadata} isOpen={!!whatifQuery} onClose={function() { setWhatifQuery(null) }} />
