@@ -247,8 +247,10 @@ export async function POST(request) {
     'T-SCATTER-PIT (scatter, PIT):      ' + tplScatP,
     '',
     '## ACCUMULATION TYPE',
-    'KPI cards:  cumulative → T-SUM  | point_in_time → T-PIT  | count_distinct → T-CD',
-    'Bar charts: cumulative → T-BAR  | point_in_time → T-BAR-PIT',
+'## ACCUMULATION TYPE',
+'KPI cards:  cumulative → T-SUM  | point_in_time → T-PIT  | count_distinct → T-CD',
+'Bar charts: cumulative → T-BAR  | point_in_time → T-BAR-PIT',
+'OVERRIDE: if a field has aggregation = "AVG", always use T-PIT / T-BAR-PIT regardless of accumulation_type.',
     'Pie/donut:  cumulative → T-PIE  | point_in_time → T-PIE-PIT',
     'Scatter:    cumulative → T-SCATTER | point_in_time → T-SCATTER-PIT',
     'Line/area:  __AGG__=AVG for point_in_time, SUM for cumulative',
@@ -272,7 +274,7 @@ export async function POST(request) {
     preAnalysisText,
     '',
     '## DESIGN RULES',
-    'STEP 1 — KPI Cards (max 8): one per top-priority KPI/derived_kpi. cumulative→T-SUM, PIT→T-PIT, count_distinct→T-CD.',
+    'STEP 1 — KPI Cards: generate ONE card for EVERY field listed in the KPI and Derived KPI catalogue (max 8). Do not skip any. cumulative→T-SUM, PIT→T-PIT, count_distinct→T-CD.',
     'STEP 2 — Charts (8-12):',
     '  - Use highest-CV dimension per KPI from pre-analysis',
     '  - 2 line/area charts for top flow KPIs',
@@ -305,7 +307,7 @@ export async function POST(request) {
     var kpiCov = allKpis.map(function(m) {
       var inTop = topKpis.concat(topDerived).some(function(k) { return k.field_name === m.field_name })
       var hasCard = queries.some(function(q) { return q.chart_type === 'kpi' && (q.id === m.field_name || (q.title || '').toLowerCase().includes((m.display_name || '').toLowerCase())) })
-      return { field_name: m.field_name, display_name: m.display_name, type: m.type, business_priority: m.business_priority, accumulation_type: m.accumulation_type, aggregation: m.aggregation, reason: hasCard ? 'shown' : !inTop ? 'not_in_topkpis' : 'cap_hit' }
+      return { field_name: m.field_name, display_name: m.display_name, type: m.type, business_priority: m.business_priority, accumulation_type: m.accumulation_type, aggregation: m.aggregation, reason: hasCard ? 'shown' : !inTop ? 'not_in_topkpis' : 'not_selected' }
     })
     var dimCov = preAnalysis.map(function(r) {
       var cvNum = parseFloat(r.cv) || 0; var charted = queries.some(function(q) { return q.chart_type !== 'kpi' && q.sql && q.sql.indexOf(r.kpi_field) >= 0 && q.sql.indexOf(r.dim_field) >= 0 })

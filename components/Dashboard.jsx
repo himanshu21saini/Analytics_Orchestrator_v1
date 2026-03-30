@@ -631,9 +631,11 @@ if (ct === 'waterfall') {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
           {visibleKpis.map(function(r, i) {
             var row = r.data[0] || {}; var curKey = r.current_key || r.value_key || 'current_value'; var cmpKey = r.comparison_key || 'comparison_value'
-            var meta = metadata.find(function(m) { return m.field_name === r.id || (r.title || '').toLowerCase().includes((m.display_name || '').toLowerCase()) })
-            var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
-            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
+            var meta = metadata.find(function(m) { return m.field_name === r.id }) 
+        || metadata.find(function(m) { return r.id && r.id.startsWith(m.field_name) })
+        || metadata.find(function(m) { return m.display_name && (r.title || '').toLowerCase() === m.display_name.toLowerCase() })
+var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
+          return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
           })}
         </div>
       )}
