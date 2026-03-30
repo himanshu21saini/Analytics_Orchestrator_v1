@@ -584,7 +584,6 @@ if (ct === 'waterfall') {
                 })}
               </p>
             </div>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               {prefs.summary !== false && (
                 <button onClick={handleGenerateSummary} disabled={summaryState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)' }}>
@@ -597,17 +596,7 @@ if (ct === 'waterfall') {
                 </button>
               )}
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }}
-                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }}
-                onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
-                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
-                </svg>
-              </button>
+             
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
               <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
                 onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
@@ -653,6 +642,18 @@ if (ct === 'waterfall') {
       </button>
     </div>
   )}
+ <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+                        <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }}
+                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }}
+                onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
+                </svg>
+              </button>
 </div>
           </div>
 
