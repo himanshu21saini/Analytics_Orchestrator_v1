@@ -92,7 +92,12 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
         var row    = r.data[0]
         var curKey = r.current_key || r.value_key || 'current_value'
         var val    = parseFloat(row[curKey])
-        if (!isNaN(val)) map[r.id] = { value: val, title: r.title }
+        if (!isNaN(val)) {
+  map[r.id] = { value: val, title: r.title }
+  // also index by any field_name that the id starts with
+  var meta = metadata.find(function(m) { return r.id && r.id.startsWith(m.field_name) })
+  if (meta) map[meta.field_name] = { value: val, title: r.title }
+}
       }
     })
     return map
