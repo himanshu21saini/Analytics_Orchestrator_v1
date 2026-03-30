@@ -3,8 +3,7 @@ import { query } from '../../../../../lib/db'
 export async function GET(request, { params }) {
   var taskId = params.id
   var { searchParams } = new URL(request.url)
-  var mandatoryFiltersRaw = searchParams.get('mandatoryFilters')
-  var mandatoryFilters = []
+ 
   try { if (mandatoryFiltersRaw) mandatoryFilters = JSON.parse(mandatoryFiltersRaw) } catch (e) {}
 
   try {
@@ -31,9 +30,16 @@ export async function GET(request, { params }) {
       return " AND LOWER(CAST(" + f.field + " AS TEXT)) = LOWER('" + String(f.value || '').replace(/'/g, "''") + "')"
     }).join('')
 
-    // Mandatory filters
-    var mandSQL = mandatoryFilters.map(function(f) {
-      return " AND " + f.field + " = '" + String(f.value || '').replace(/'/g, "''") + "'"
+        // Mandatory filters — use stored filters from the task itself
+    var storedMandatory = []
+    try {
+      storedMandatory = typeof task.mandatory_filters === 'string'
+        ? JSON.parse(task.mandatory_filters)
+        : (task.mandatory_filters || [])
+    } catch (e) { storedMandatory = [] }
+
+    var mandSQL = storedMandatory.map(function(f) {
+      return " AND LOWER(CAST(" + f.field + " AS TEXT)) = LOWER('" + String(f.value || '').replace(/'/g, "''") + "')"
     }).join('')
 
     // Determine aggregation
