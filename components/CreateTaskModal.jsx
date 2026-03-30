@@ -236,7 +236,7 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
           <FieldRow label="Segment filters">
              {console.log('dimFilters:', dimFilters)}
             {dimFilters.map(function(f, i) {
-      <DimFilterRow key={i} index={i} filter={f} dimensions={dimensions} datasetId={session.datasetId} onUpdate={handleDimUpdate} onRemove={handleDimRemove} />      
+      return <DimFilterRow key={i} index={i} filter={f} dimensions={dimensions} datasetId={session.datasetId} onUpdate={handleDimUpdate} onRemove={handleDimRemove} />      
       })}
             <button onClick={handleAddDim}
               style={{ fontSize: 10, padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontFamily: 'var(--font-body)', border: '1px solid var(--accent-border)', background: 'var(--accent-dim)', color: 'var(--text-accent)', transition: 'all var(--transition)', marginTop: 2 }}>
