@@ -143,6 +143,47 @@ function AutoGenResult({ result }) {
   )
 }
 
+// ── StepBar ───────────────────────────────────────────────────────────────────
+
+function StepBar({ current }) {
+  var steps = ['Configure', 'Choose Mode', 'Settings']
+  var items = []
+  steps.forEach(function(label, i) {
+    var n = i + 1; var done = n < current; var active = n === current
+    items.push(
+      <div key={'s' + n} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: '50%',
+          border: '1px solid ' + (done || active ? 'var(--accent-border)' : 'var(--border)'),
+          background: active ? 'var(--accent-dim)' : done ? 'rgba(0,200,240,0.07)' : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all var(--transition)',
+        }}>
+          {done
+            ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <polyline points="1.5,5 3.8,7.5 8.5,2.5" stroke="var(--text-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            : <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: active ? 'var(--text-accent)' : 'var(--text-tertiary)' }}>{n}</span>
+          }
+        </div>
+        <span style={{ fontSize: 9, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', color: active ? 'var(--text-accent)' : done ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
+          {label}
+        </span>
+      </div>
+    )
+    if (i < steps.length - 1) {
+      items.push(
+        <div key={'l' + n} style={{ flex: 1, height: 1, background: done ? 'rgba(0,200,240,0.3)' : 'var(--border)', marginBottom: 18, minWidth: 24, transition: 'background var(--transition)' }} />
+      )
+    }
+  })
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 36, width: '100%', maxWidth: 400 }}>
+      {items}
+    </div>
+  )
+}
+
 // ── VapiHelpWidget ────────────────────────────────────────────────────────────
 var VAPI_PUBLIC_KEY   = process.env.NEXT_PUBLIC_VAPI_KEY
 var VAPI_ASSISTANT_ID = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
@@ -359,10 +400,8 @@ export default function SetupScreen({ onReady }) {
       .then(function(r) { return r.json() })
       .then(function(j) {
         var fields = j.fields || []
-        // Period pairs
         setPeriodPairs(detectPeriodPairs(fields.filter(function(f) { return f.type === 'year_month' })))
         setSelPairIdx(0)
-        // Mandatory filters
         var mFields = fields.filter(function(f) { return f.mandatory_filter_value && String(f.mandatory_filter_value).trim() })
         setMandatoryFilterFields(mFields)
         var defaults = {}
@@ -389,8 +428,6 @@ export default function SetupScreen({ onReady }) {
     setLoadingLists(false)
   }
 
-  // ── Save metadata separately (before Generate Intelligence) ───────────────
-  // This is a dedicated step so mandatory filters are loaded BEFORE doBuild runs.
   async function handleSaveMetadata() {
     if (!metaFile) return
     setSavingMeta(true); setError('')
@@ -403,8 +440,8 @@ export default function SetupScreen({ onReady }) {
       if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
       var savedMetaId = String(mj.metadataSet.id)
       await loadLists()
-      setSelMeta(savedMetaId)   // triggers useEffect → loads mandatory filters
-      setMetaMode('existing')   // switches to existing mode showing the saved set
+      setSelMeta(savedMetaId)
+      setMetaMode('existing')
       setMetaFile(null)
     } catch(err) { setError('Metadata save failed: ' + err.message) }
     setSavingMeta(false)
@@ -426,7 +463,6 @@ export default function SetupScreen({ onReady }) {
     if (!rows.length) throw new Error('File is empty.')
 
     setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
-    // Send first 20 rows as sample for type inference
     var initRes = await fetch('/api/upload-dataset', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'init', name: name, rowCount: rows.length, sampleRows: rows.slice(0, 20) }),
@@ -473,64 +509,6 @@ export default function SetupScreen({ onReady }) {
       setAutoGenResult({ fieldCount: json.fieldCount, flaggedCount: json.flaggedCount, filename: json.filename })
       setAutoGenState('done')
     } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
-  }
-
-  // ── Ask Only mode — no generate-queries, go straight to ask interface ────
-  async function handleAskOnly() {
-    setError('')
-    if (metaMode === 'upload') { setError('Please save your metadata file first using the "Save Metadata" button.'); return }
-    if (dataMode === 'upload') { setError('Please upload your dataset first.'); return }
-    setWorking(true); setProgress('Preparing Ask session...')
-    try {
-      // Resolve period pairs
-      var activePairs = periodPairs
-      if (!activePairs.length) {
-        try {
-          var pRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
-          var pJson = await pRes.json()
-          activePairs = detectPeriodPairs((pJson.fields || []).filter(function(f) { return f.type === 'year_month' }))
-        } catch(e) { activePairs = [] }
-      }
-      if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
-      var chosenPair = activePairs[selPairIdx] || activePairs[0]
-
-      // Load metadata rows
-      var metaRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
-      var metaJson = await metaRes.json()
-      var metadata = metaJson.fields || []
-
-      // Build mandatory filters
-      var mandatoryFilters = mandatoryFilterFields.map(function(f) {
-        return { field: f.field_name, value: mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
-      })
-
-      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
-
-      // Build periodInfo matching what generate-queries would return
-      var periodInfo = {
-        viewLabel: viewType + ' · ' + selYear + '-' + selMonth,
-        cmpLabel:  compType,
-        yf:        chosenPair.yearField,
-        mf:        chosenPair.monthField,
-        curYear:   selYear,
-        curCond:   chosenPair.yearField + ' = ' + selYear + ' AND ' + chosenPair.monthField + ' = ' + selMonth,
-      }
-
-      onReady({
-        mode:            'ask-only',
-        datasetId:       selDataset,
-        metadataSetId:   selMeta,
-        metadata:        metadata,
-        timePeriod,
-        periodInfo,
-        userContext:     null,
-        mandatoryFilters,
-        preferences:     prefs,
-        // No queries or queryResults — skipping generate-queries entirely
-        queries:         [],
-        queryResults:    [],
-      })
-    } catch(err) { setError(err.message); setWorking(false); setProgress('') }
   }
 
   async function handleAskOnly() {
@@ -591,21 +569,15 @@ export default function SetupScreen({ onReady }) {
     setShowConfirm(false); setError(''); setWorking(true)
     var finalDatasetId = selDataset; var finalMetaId = selMeta
     try {
-      // ── Upload dataset if needed ───────────────────────────────────────
       if (dataMode === 'upload') {
         if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
         var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
         finalDatasetId = String(dataset.id); await loadLists()
       }
-
-      // ── Metadata must already be saved (via Save Metadata button) ──────
-      // metaMode === 'upload' with unsaved file is blocked below
       if (metaMode === 'upload') {
         setError('Please save your metadata file first using the "Save Metadata" button before generating.')
         setWorking(false); return
       }
-
-      // ── Resolve period pairs fresh at build time (fixes race condition) ─
       var activePairs = periodPairs
       if (!activePairs.length) {
         try {
@@ -613,7 +585,6 @@ export default function SetupScreen({ onReady }) {
           var pairJson = await pairRes.json()
           var allFields = pairJson.fields || []
           activePairs = detectPeriodPairs(allFields.filter(function(f) { return f.type === 'year_month' }))
-          // Also load mandatory filters if not yet loaded
           if (!mandatoryFilterFields.length) {
             var mFields = allFields.filter(function(f) { return f.mandatory_filter_value && String(f.mandatory_filter_value).trim() })
             setMandatoryFilterFields(mFields)
@@ -624,31 +595,17 @@ export default function SetupScreen({ onReady }) {
       }
       if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
       var chosenPair = activePairs[selPairIdx] || activePairs[0]
-
-      // ── Build mandatory filters from current state ─────────────────────
       var mandatoryFilters = mandatoryFilterFields.map(function(f) {
-        return {
-          field:        f.field_name,
-          value:        mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(),
-          display_name: f.display_name || f.field_name,
-        }
+        return { field: f.field_name, value: mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
       })
-
       setProgress('Composing intelligence queries...')
-      var timePeriod = {
-        viewType, year: selYear, month: selMonth,
-        comparisonType: compType,
-        yearField: chosenPair.yearField,
-        monthField: chosenPair.monthField,
-      }
-
+      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
       var gqRes = await fetch('/api/generate-queries', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod, userContext: userContext || null, mandatoryFilters }),
       })
       var gqJson = await gqRes.json()
       if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
-
       setProgress('Executing ' + (gqJson.queries ? gqJson.queries.length : '') + ' queries...')
       var rqRes = await fetch('/api/run-queries', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -656,7 +613,6 @@ export default function SetupScreen({ onReady }) {
       })
       var rqJson = await rqRes.json()
       if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
-
       onReady({
         datasetId: finalDatasetId, metadataSetId: finalMetaId,
         queries: gqJson.queries, queryResults: rqJson.results,
@@ -671,7 +627,16 @@ export default function SetupScreen({ onReady }) {
     } catch(err) { setError(err.message); setWorking(false); setProgress('') }
   }
 
-  // ── Splash screen ─────────────────────────────────────────────────────────
+  // ── Shared styles (used across steps 1 & 3) ───────────────────────────────
+  var selectStyle = { width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-body)' }
+  var inputStyle  = { ...selectStyle, cursor: 'text', marginBottom: 8 }
+
+  // ── Page wrapper + header shared across all steps ─────────────────────────
+  var pageStyle = { minHeight: 'calc(100vh - 54px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '36px 24px 60px' }
+  var headingStyle = { fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15, color: 'var(--text-primary)', marginBottom: 10 }
+  var subStyle = { color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, fontFamily: 'var(--font-body)' }
+
+  // ── Step 0: Splash ────────────────────────────────────────────────────────
   if (step === 0) {
     return (
       <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
@@ -705,30 +670,29 @@ export default function SetupScreen({ onReady }) {
     )
   }
 
-  // ── Main UI ───────────────────────────────────────────────────────────────
-  var selectStyle = { width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 12, background: 'var(--surface-2)', color: 'var(--text-primary)', cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-body)' }
-  var inputStyle  = { ...selectStyle, cursor: 'text', marginBottom: 8 }
+  // ── Step 1: Configure Dataset ─────────────────────────────────────────────
+  if (step === 1) {
+    var canNext = !loadingLists && (
+      (dataMode === 'existing' && !!selDataset) || (dataMode === 'upload' && !!dataFile)
+    ) && (
+      (metaMode === 'existing' && !!selMeta) || (metaMode === 'upload' && !!metaFile)
+    )
 
-  return (
-    <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '36px 24px 60px' }}>
+    return (
+      <div style={pageStyle}>
+        <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
+          <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
+          <h1 style={headingStyle}>Configure your dataset</h1>
+          <p style={subStyle}>Select your data source, set the time horizon and apply any required filters.</p>
+        </div>
 
-      <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 36 }}>
-        <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15, color: 'var(--text-primary)', marginBottom: 12 }}>Configure Intelligence</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, fontFamily: 'var(--font-body)' }}>Select your data sources, time horizon and context.</p>
-      </div>
+        <StepBar current={1} />
 
-      <div style={{ width: '100%', maxWidth: 1200, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+        <div style={{ width: '100%', maxWidth: 640 }}>
 
-        {/* ── LEFT CARD ─────────────────────────────────────────────────── */}
-        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
-
-          {/* Section 1: Data */}
+          {/* ── Section 1: Data ── */}
           <SectionCard n="1" title="Data">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Main data file — .xlsx, .xls or .csv</p>
-
-            {/* Dataset */}
             <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Dataset</p>
             {!loadingLists && datasets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
@@ -749,8 +713,6 @@ export default function SetupScreen({ onReady }) {
                   </div>
                 </div>
             }
-
-            {/* Metadata */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
               <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', fontFamily: 'var(--font-body)' }}>Metadata</p>
               <AutoGenButton state={autoGenState} onGenerate={handleAutoGenMeta} disabled={dataMode === 'existing' ? !selDataset : !dataFile} compact={true} />
@@ -772,22 +734,8 @@ export default function SetupScreen({ onReady }) {
                     <input ref={metaRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setMetaFile(e.target.files[0]||null)}} />
                     <p style={{ fontSize: 11, color: metaFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{metaFile?metaFile.name:'Select metadata file (.xlsx or .csv)'}</p>
                   </div>
-                  {/* Save Metadata button — appears when file is selected */}
                   {metaFile && (
-                    <button
-                      onClick={handleSaveMetadata}
-                      disabled={savingMeta}
-                      style={{
-                        marginTop: 8, width: '100%', padding: '8px 12px',
-                        borderRadius: 'var(--radius-md)',
-                        background: savingMeta ? 'transparent' : 'var(--accent-dim)',
-                        border: '1px solid ' + (savingMeta ? 'var(--border)' : 'var(--accent-border)'),
-                        color: savingMeta ? 'var(--text-tertiary)' : 'var(--text-accent)',
-                        fontSize: 11, fontWeight: 600, cursor: savingMeta ? 'not-allowed' : 'pointer',
-                        fontFamily: 'var(--font-display)', letterSpacing: '0.08em',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      }}
-                    >
+                    <button onClick={handleSaveMetadata} disabled={savingMeta} style={{ marginTop: 8, width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: savingMeta?'transparent':'var(--accent-dim)', border: '1px solid '+(savingMeta?'var(--border)':'var(--accent-border)'), color: savingMeta?'var(--text-tertiary)':'var(--text-accent)', fontSize: 11, fontWeight: 600, cursor: savingMeta?'not-allowed':'pointer', fontFamily: 'var(--font-display)', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                       {savingMeta ? <><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} /> Saving...</> : '↑ Save Metadata'}
                     </button>
                   )}
@@ -796,7 +744,7 @@ export default function SetupScreen({ onReady }) {
             {autoGenState === 'done' && autoGenResult && <AutoGenResult result={autoGenResult} />}
           </SectionCard>
 
-          {/* Section 2: Time Period */}
+          {/* ── Section 2: Time Period ── */}
           <SectionCard n="2" title="Time period">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
             <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
@@ -840,7 +788,7 @@ export default function SetupScreen({ onReady }) {
             </div>
           </SectionCard>
 
-          {/* Section 3: Data Filters — only shown when mandatory filter fields exist */}
+          {/* ── Section 3: Data Filters (conditional) ── */}
           {mandatoryFilterFields.length > 0 && (
             <SectionCard n="3" title="Data Filters">
               <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -854,9 +802,7 @@ export default function SetupScreen({ onReady }) {
                   var selected   = mandatoryFilterValues[f.field_name] || defaultVal
                   return (
                     <div key={f.field_name}>
-                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, fontFamily: 'var(--font-body)' }}>
-                        {f.display_name || f.field_name}
-                      </p>
+                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, fontFamily: 'var(--font-body)' }}>{f.display_name || f.field_name}</p>
                       {options.length > 0 ? (
                         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           {options.map(function(opt) {
@@ -881,73 +827,6 @@ export default function SetupScreen({ onReady }) {
               </div>
             </SectionCard>
           )}
-        </div>
-
-        {/* ── RIGHT CARD ────────────────────────────────────────────────── */}
-        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
-
-          {/* Context */}
-          <SectionCard n={mandatoryFilterFields.length > 0 ? '4' : '3'} title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
-              Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.
-            </p>
-            <textarea ref={contextRef} defaultValue=""
-              placeholder={'e.g. "I am head of West Region and my focus is Revenue"'}
-              style={{ width: '100%', minHeight: 72, padding: '9px 11px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', lineHeight: 1.5 }}
-              onFocus={function(e){e.target.style.borderColor='var(--accent-border)'}}
-              onBlur={function(e){e.target.style.borderColor='var(--border)'}}
-            />
-            {showConfirm && extracted && (
-              <div style={{ background: 'var(--surface)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginTop: 10 }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, fontFamily: 'var(--font-body)' }}>Confirm context</p>
-                {extracted.filters && extracted.filters.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>Filters</p>
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                      {extracted.filters.map(function(f,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{f.display||(f.field+' '+f.operator+' '+f.value)}</span> })}
-                    </div>
-                  </div>
-                )}
-                {extracted.kpi_focus && extracted.kpi_focus.length > 0 && (
-                  <div style={{ marginBottom: 6 }}>
-                    <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>KPI focus</p>
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                      {extracted.kpi_focus.map(function(k,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>{k}</span> })}
-                    </div>
-                  </div>
-                )}
-                {extracted.explanation && <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{extracted.explanation}</p>}
-              </div>
-            )}
-          </SectionCard>
-
-          {/* Dashboard panels */}
-          <SectionCard n={mandatoryFilterFields.length > 0 ? '5' : '4'} title="Dashboard panels">
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
-            {[
-              { key: 'decisions',      label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
-              { key: 'summary',        label: 'Generate Summary',    desc: 'Executive narrative report' },
-              { key: 'forecast',       label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
-              { key: 'queryInspector', label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
-              { key: 'coveragePanel',  label: 'Coverage Report',     desc: 'Explain why KPIs or charts were skipped' },
-            ].map(function(item) {
-              var on = prefs[item.key] !== false
-              return (
-                <div key={item.key}
-                  onClick={function(){setPrefs(function(p){var n=Object.assign({},p);n[item.key]=!on;return n})}}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 9px', borderRadius: 'var(--radius-md)', border: '1px solid '+(on?'var(--accent-border)':'var(--border)'), background: on?'var(--accent-dim)':'transparent', cursor: 'pointer', transition: 'all var(--transition)', marginBottom: 6 }}>
-                  <div style={{ width: 30, height: 16, borderRadius: 8, background: on?'var(--accent)':'var(--border)', position: 'relative', flexShrink: 0, transition: 'background var(--transition)' }}>
-                    <div style={{ position: 'absolute', top: 2, left: on?15:2, width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left var(--transition)' }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 11, fontWeight: 500, color: on?'var(--text-accent)':'var(--text-secondary)', fontFamily: 'var(--font-body)', marginBottom: 1 }}>{item.label}</p>
-                    <p style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{item.desc}</p>
-                  </div>
-                </div>
-              )
-            })}
-          </SectionCard>
 
           {error && (
             <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)' }}>
@@ -955,18 +834,299 @@ export default function SetupScreen({ onReady }) {
             </p>
           )}
 
-          <div style={{ flex: 1 }} />
-
-          {/* Ask Questions — zero upfront tokens */}
-          <button onClick={handleAskOnly} disabled={working || extracting || !selDataset || !selMeta}
-            style={{ width: "100%", padding: "12px 24px", marginBottom: 8, background: "transparent", border: "1px solid rgba(155,127,227,0.35)", borderRadius: "var(--radius-md)", fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: (!selDataset || !selMeta || working || extracting) ? "var(--text-tertiary)" : "#B8A0F0", cursor: (!selDataset || !selMeta || working || extracting) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-display)", transition: "all var(--transition)" }}>
-            Ask Questions
+          {/* Next button */}
+          <button
+            onClick={function() { setError(''); setStep(2) }}
+            disabled={!canNext}
+            style={{
+              width: '100%', padding: '14px 24px',
+              background: !canNext ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+              border: '1px solid ' + (!canNext ? 'var(--border)' : 'var(--accent-border)'),
+              borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
+              letterSpacing: '0.1em', textTransform: 'uppercase',
+              color: !canNext ? 'var(--text-tertiary)' : 'var(--text-accent)',
+              cursor: !canNext ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+              boxShadow: !canNext ? 'none' : '0 0 20px rgba(0,200,240,0.06)',
+            }}
+          >
+            Next
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
+        </div>
+      </div>
+    )
+  }
 
+  // ── Step 2: Choose Mode ───────────────────────────────────────────────────
+  if (step === 2) {
+    return (
+      <div style={pageStyle}>
+        <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
+          <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
+          <h1 style={headingStyle}>How would you like to proceed?</h1>
+          <p style={subStyle}>Choose a mode to continue. You can always start a new session later.</p>
+        </div>
+
+        <StepBar current={2} />
+
+        <div style={{ width: '100%', maxWidth: 860, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+
+          {/* ── Ask Questions card ── */}
+          <div
+            onClick={!working ? handleAskOnly : undefined}
+            style={{
+              background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+              border: '1px solid rgba(155,127,227,0.3)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '32px 28px',
+              cursor: working ? 'not-allowed' : 'pointer',
+              position: 'relative', overflow: 'hidden',
+              transition: 'all var(--transition)',
+              display: 'flex', flexDirection: 'column', gap: 18,
+              opacity: working ? 0.75 : 1,
+            }}
+            onMouseEnter={function(e) {
+              if (!working) {
+                e.currentTarget.style.borderColor = 'rgba(155,127,227,0.6)'
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.05) 0%, var(--surface-2) 100%)'
+                e.currentTarget.style.boxShadow = '0 0 28px rgba(155,127,227,0.08)'
+              }
+            }}
+            onMouseLeave={function(e) {
+              e.currentTarget.style.borderColor = 'rgba(155,127,227,0.3)'
+              e.currentTarget.style.background = 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, rgba(155,127,227,0.5), transparent)' }} />
+            {/* Icon */}
+            <div style={{ width: 52, height: 52, borderRadius: 'var(--radius-md)', background: 'rgba(155,127,227,0.1)', border: '1px solid rgba(155,127,227,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {working
+                ? <span className="spinner" style={{ borderColor: 'rgba(155,127,227,0.3)', borderTopColor: '#B8A0F0', width: 18, height: 18 }} />
+                : <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 6h16M4 10.5h10M4 15h7" stroke="#B8A0F0" strokeWidth="1.6" strokeLinecap="round"/>
+                    <circle cx="18" cy="16.5" r="4.5" fill="none" stroke="#B8A0F0" strokeWidth="1.6"/>
+                    <path d="M21.5 20l2 2" stroke="#B8A0F0" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+              }
+            </div>
+            {/* Title + badge */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#B8A0F0', fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>Ask Questions</h2>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'rgba(155,127,227,0.12)', border: '1px solid rgba(155,127,227,0.25)', color: '#B8A0F0', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Zero cost</span>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.65 }}>
+                Start with a blank slate. Ask anything about your data — get instant SQL-powered answers, driver analysis and trend breakdowns. No queries generated upfront.
+              </p>
+            </div>
+            {/* Feature list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['Instant natural-language queries', 'Driver analysis & waterfall charts', 'No upfront token cost'].map(function(feat) {
+                return (
+                  <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'rgba(155,127,227,0.1)', border: '1px solid rgba(155,127,227,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><polyline points="1,3.5 2.8,5.5 6,1.5" stroke="#B8A0F0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{feat}</span>
+                  </div>
+                )
+              })}
+            </div>
+            {/* Footer CTA */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'auto', paddingTop: 4, borderTop: '1px solid rgba(155,127,227,0.12)' }}>
+              <span style={{ fontSize: 11, color: '#B8A0F0', fontFamily: 'var(--font-body)', fontWeight: 500 }}>{working ? 'Preparing session…' : 'Select this mode'}</span>
+              {!working && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M7 3l3 3-3 3" stroke="#B8A0F0" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+            </div>
+          </div>
+
+          {/* ── Generate Intelligence card ── */}
+          <div
+            onClick={function() { setError(''); setStep(3) }}
+            style={{
+              background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+              border: '1px solid var(--accent-border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '32px 28px',
+              cursor: 'pointer',
+              position: 'relative', overflow: 'hidden',
+              transition: 'all var(--transition)',
+              display: 'flex', flexDirection: 'column', gap: 18,
+            }}
+            onMouseEnter={function(e) {
+              e.currentTarget.style.borderColor = 'rgba(0,200,240,0.6)'
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0,200,240,0.05) 0%, var(--surface-2) 100%)'
+              e.currentTarget.style.boxShadow = '0 0 28px rgba(0,200,240,0.08)'
+            }}
+            onMouseLeave={function(e) {
+              e.currentTarget.style.borderColor = 'var(--accent-border)'
+              e.currentTarget.style.background = 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.4 }} />
+            {/* Icon */}
+            <div style={{ width: 52, height: 52, borderRadius: 'var(--radius-md)', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="15" width="4" height="7" rx="1" fill="rgba(0,200,240,0.18)" stroke="var(--accent)" strokeWidth="1.4"/>
+                <rect x="10" y="10" width="4" height="12" rx="1" fill="rgba(0,200,240,0.18)" stroke="var(--accent)" strokeWidth="1.4"/>
+                <rect x="18" y="4" width="4" height="18" rx="1" fill="rgba(0,200,240,0.18)" stroke="var(--accent)" strokeWidth="1.4"/>
+                <path d="M3.5 12l5-4 5-3 5-4" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" strokeDasharray="2 2" opacity="0.5"/>
+              </svg>
+            </div>
+            {/* Title + badge */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-accent)', fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>Generate Intelligence</h2>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Full dashboard</span>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.65 }}>
+                Let PRISM build a full dashboard — KPI cards, charts, trend explorer and AI-ranked decisions. Configure your panels and context before building.
+              </p>
+            </div>
+            {/* Feature list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['KPI cards, charts & trend explorer', 'AI-ranked decisions & summary', 'Context-aware query generation'].map(function(feat) {
+                return (
+                  <div key={feat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><polyline points="1,3.5 2.8,5.5 6,1.5" stroke="var(--accent)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{feat}</span>
+                  </div>
+                )
+              })}
+            </div>
+            {/* Footer CTA */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 'auto', paddingTop: 4, borderTop: '1px solid rgba(0,200,240,0.12)' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-accent)', fontFamily: 'var(--font-body)', fontWeight: 500 }}>Select this mode</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M7 3l3 3-3 3" stroke="var(--accent)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 16, border: '1px solid rgba(224,85,85,0.2)', maxWidth: 860, width: '100%', fontFamily: 'var(--font-body)' }}>
+            {error}
+          </p>
+        )}
+
+        {/* Back to Configure */}
+        <button
+          onClick={function() { setError(''); setStep(1) }}
+          disabled={working}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 16px', cursor: working ? 'not-allowed' : 'pointer', color: 'var(--text-tertiary)', fontSize: 11, fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 6, transition: 'all var(--transition)' }}
+          onMouseEnter={function(e) { if (!working) { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-strong)' } }}
+          onMouseLeave={function(e) { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M9 6H1M4 3L1 6l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Back to Configure
+        </button>
+      </div>
+    )
+  }
+
+  // ── Step 3: Dashboard Settings (Generate Intelligence path) ───────────────
+  return (
+    <div style={pageStyle}>
+      <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
+        <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
+        <h1 style={headingStyle}>Configure your dashboard</h1>
+        <p style={subStyle}>Add context to focus the analysis and choose which panels to include.</p>
+      </div>
+
+      <StepBar current={3} />
+
+      <div style={{ width: '100%', maxWidth: 640 }}>
+
+        {/* ── Context (Section 4 or 3) ── */}
+        <SectionCard n={mandatoryFilterFields.length > 0 ? '4' : '3'} title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>
+            Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.
+          </p>
+          <textarea ref={contextRef} defaultValue=""
+            placeholder={'e.g. "I am head of West Region and my focus is Revenue"'}
+            style={{ width: '100%', minHeight: 72, padding: '9px 11px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical', outline: 'none', lineHeight: 1.5 }}
+            onFocus={function(e){e.target.style.borderColor='var(--accent-border)'}}
+            onBlur={function(e){e.target.style.borderColor='var(--border)'}}
+          />
+          {showConfirm && extracted && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginTop: 10 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8, fontFamily: 'var(--font-body)' }}>Confirm context</p>
+              {extracted.filters && extracted.filters.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>Filters</p>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {extracted.filters.map(function(f,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{f.display||(f.field+' '+f.operator+' '+f.value)}</span> })}
+                  </div>
+                </div>
+              )}
+              {extracted.kpi_focus && extracted.kpi_focus.length > 0 && (
+                <div style={{ marginBottom: 6 }}>
+                  <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, fontFamily: 'var(--font-body)' }}>KPI focus</p>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {extracted.kpi_focus.map(function(k,i){ return <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>{k}</span> })}
+                  </div>
+                </div>
+              )}
+              {extracted.explanation && <p style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>{extracted.explanation}</p>}
+            </div>
+          )}
+        </SectionCard>
+
+        {/* ── Dashboard Panels (Section 5 or 4) ── */}
+        <SectionCard n={mandatoryFilterFields.length > 0 ? '5' : '4'} title="Dashboard panels">
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
+          {[
+            { key: 'decisions',      label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
+            { key: 'summary',        label: 'Generate Summary',    desc: 'Executive narrative report' },
+            { key: 'forecast',       label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
+            { key: 'queryInspector', label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
+            { key: 'coveragePanel',  label: 'Coverage Report',     desc: 'Explain why KPIs or charts were skipped' },
+          ].map(function(item) {
+            var on = prefs[item.key] !== false
+            return (
+              <div key={item.key}
+                onClick={function(){setPrefs(function(p){var n=Object.assign({},p);n[item.key]=!on;return n})}}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 9px', borderRadius: 'var(--radius-md)', border: '1px solid '+(on?'var(--accent-border)':'var(--border)'), background: on?'var(--accent-dim)':'transparent', cursor: 'pointer', transition: 'all var(--transition)', marginBottom: 6 }}>
+                <div style={{ width: 30, height: 16, borderRadius: 8, background: on?'var(--accent)':'var(--border)', position: 'relative', flexShrink: 0, transition: 'background var(--transition)' }}>
+                  <div style={{ position: 'absolute', top: 2, left: on?15:2, width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left var(--transition)' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 11, fontWeight: 500, color: on?'var(--text-accent)':'var(--text-secondary)', fontFamily: 'var(--font-body)', marginBottom: 1 }}>{item.label}</p>
+                  <p style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{item.desc}</p>
+                </div>
+              </div>
+            )
+          })}
+        </SectionCard>
+
+        {error && (
+          <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)', fontFamily: 'var(--font-body)' }}>
+            {error}
+          </p>
+        )}
+
+        {/* Back + Generate buttons */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          <button
+            onClick={function() { setError(''); setShowConfirm(false); setStep(2) }}
+            disabled={working || extracting}
+            style={{ flexShrink: 0, padding: '14px 20px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: working||extracting?'var(--text-tertiary)':'var(--text-secondary)', cursor: working||extracting?'not-allowed':'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-display)', transition: 'all var(--transition)' }}
+            onMouseEnter={function(e){ if(!working&&!extracting){ e.currentTarget.style.borderColor='var(--border-strong)'; e.currentTarget.style.color='var(--text-primary)' } }}
+            onMouseLeave={function(e){ e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color=working||extracting?'var(--text-tertiary)':'var(--text-secondary)' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M9 6H1M4 3L1 6l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Back
+          </button>
 
           <button onClick={handleBuild} disabled={working || extracting}
             style={{
-              width: '100%', padding: '14px 24px',
+              flex: 1, padding: '14px 24px',
               background: working||extracting ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
               border: '1px solid ' + (working||extracting ? 'var(--border)' : 'var(--accent-border)'),
               borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600,
@@ -982,9 +1142,9 @@ export default function SetupScreen({ onReady }) {
               : showConfirm ? 'Build with this context'
               : 'Generate Intelligence'}
           </button>
-
-          <VapiHelpWidget />
         </div>
+
+        <VapiHelpWidget />
       </div>
     </div>
   )
