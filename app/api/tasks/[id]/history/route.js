@@ -28,7 +28,7 @@ export async function GET(request, { params }) {
 
     // Build WHERE clause for dimension filters
     var dimSQL = dimFilters.map(function(f) {
-      return " AND " + f.field + " = '" + String(f.value || '').replace(/'/g, "''") + "'"
+      return " AND LOWER(CAST(" + f.field + " AS TEXT)) = LOWER('" + String(f.value || '').replace(/'/g, "''") + "')"
     }).join('')
 
     // Mandatory filters
