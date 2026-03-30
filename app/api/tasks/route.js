@@ -35,8 +35,8 @@ export async function POST(request) {
     var rows = await query(
       `INSERT INTO prism_tasks
         (dataset_id, metadata_set_id, kpi_field, kpi_display, dimension_filters,
-         year_field, month_field, created_year, created_month, created_value, direction, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         year_field, month_field, created_year, created_month, created_value, direction, note, mandatory_filters)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         datasetId,
@@ -51,6 +51,7 @@ export async function POST(request) {
         createdValue !== undefined ? createdValue : null,
         direction || 'i',
         note || null,
+        JSON.stringify(mandatoryFilters || []),
       ]
     )
     return Response.json({ task: rows[0] })
