@@ -623,7 +623,7 @@ if (ct === 'waterfall') {
               </button>
             </div>
 
-                     <div style={{ position: 'relative' }}>
+                     <div style={{ position: 'relative', marginLeft: 8 }}>
   <button onClick={function() { setShowTrackMenu(function(v) { return !v }) }}
     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)', border: '1px solid rgba(16,196,138,0.3)', borderRadius: 'var(--radius-md)', color: '#10C48A', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
     onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.2)' }}
