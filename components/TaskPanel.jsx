@@ -265,14 +265,14 @@ function TaskRow({ task, mandatoryFilters, onStatusChange, onDelete }) {
 
 // ── Main TaskPanel ─────────────────────────────────────────────────────────────
 
-export default function TaskPanel({ session }) {
+export default function TaskPanel({ session, alwaysOpen }) {
   var datasetId       = session.datasetId
   var mandatoryFilters = session.mandatoryFilters || []
 
   var [tasks,        setTasks]        = useState([])
   var [loading,      setLoading]      = useState(true)
   var [error,        setError]        = useState('')
-  var [open,         setOpen]         = useState(false)
+  var [open, setOpen] = useState(alwaysOpen || false)
   var [showResolved, setShowResolved] = useState(false)
 
   useEffect(function() { loadTasks() }, [datasetId])
