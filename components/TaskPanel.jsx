@@ -43,7 +43,7 @@ function TrendBadge({ trend }) {
   )
 }
 
-function TaskRow({ task, mandatoryFilters, onStatusChange, onDelete }) {
+function TaskRow({ task, onStatusChange, onDelete }) {
   var [expanded,    setExpanded]    = useState(false)
   var [loadingHist, setLoadingHist] = useState(false)
   var [series,      setSeries]      = useState(null)
@@ -62,8 +62,8 @@ function TaskRow({ task, mandatoryFilters, onStatusChange, onDelete }) {
     if (series) return  // already loaded
     setLoadingHist(true); setHistError('')
     try {
-      var mfParam = encodeURIComponent(JSON.stringify(mandatoryFilters || []))
-      var res     = await fetch('/api/tasks/' + task.id + '/history?mandatoryFilters=' + mfParam)
+      var res = await fetch('/api/tasks/' + task.id + '/history')
+      
       var json    = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to load history.')
       setSeries(json.series || [])
@@ -140,6 +140,21 @@ function TaskRow({ task, mandatoryFilters, onStatusChange, onDelete }) {
                 </span>
               )
             })}
+            {(function() {
+              var mf = []
+              try {
+                mf = typeof task.mandatory_filters === 'string'
+                  ? JSON.parse(task.mandatory_filters)
+                  : (task.mandatory_filters || [])
+              } catch(e) { mf = [] }
+              return mf.map(function(f, i) {
+                return (
+                  <span key={'mf_' + i} style={{ fontSize: 10, padding: '1px 7px', borderRadius: 99, background: 'rgba(240,160,48,0.1)', border: '1px solid rgba(240,160,48,0.3)', color: '#F0A030', fontFamily: 'var(--font-mono)' }}>
+                    {f.display_name || f.field}: {f.value}
+                  </span>
+                )
+              })
+            })()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
@@ -267,7 +282,6 @@ function TaskRow({ task, mandatoryFilters, onStatusChange, onDelete }) {
 
 export default function TaskPanel({ session, alwaysOpen }) {
   var datasetId       = session.datasetId
-  var mandatoryFilters = session.mandatoryFilters || []
 
   var [tasks,        setTasks]        = useState([])
   var [loading,      setLoading]      = useState(true)
@@ -363,7 +377,7 @@ export default function TaskPanel({ session, alwaysOpen }) {
                     <TaskRow
                       key={task.id}
                       task={task}
-                      mandatoryFilters={mandatoryFilters}
+                     
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
                     />
