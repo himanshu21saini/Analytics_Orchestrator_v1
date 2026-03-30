@@ -7,16 +7,33 @@ var MONTHS_MAP = {
   july:7, august:8, september:9, october:10, november:11, december:12,
 }
 
-// ── Detect if question needs two-pass analysis ────────────────────────────────
-function isTwoPassQuestion(question) {
+// ── Detect two-pass type ─────────────────────────────────────────────────────
+// Returns 'performance', 'analytical', or false
+function getTwoPassType(question) {
   var q = question.toLowerCase()
-  return /\bwhy\b/.test(q) ||
+
+  var hasCausal = /\bwhy\b/.test(q) ||
     /what (caused|drove|led to|contributed|impacted)/.test(q) ||
-    /underperform(ed|ing)?/.test(q) ||
-    /overperform(ed|ing)?/.test(q) ||
     /root cause/.test(q) ||
-    /what.{0,20}(behind|driving|reason)/.test(q)
+    /what.{0,20}(behind|driving|reason)/.test(q) ||
+    /underperform(ed|ing)?/.test(q) ||
+    /overperform(ed|ing)?/.test(q)
+
+  if (!hasCausal) return false
+
+  // Performance type: comparing entities vs portfolio average
+  var isPerformance = /underperform(ed|ing)?/.test(q) ||
+    /overperform(ed|ing)?/.test(q) ||
+    (/\bwhy\b/.test(q) && /best|worst|top|bottom|highest|lowest|most|least/.test(q) &&
+     !/range|spread|variance|fluctuation|single day|per day|in a day/.test(q))
+
+  if (isPerformance) return 'performance'
+
+  // Analytical type: specific metric, range, pattern + why
+  return 'analytical'
 }
+
+function isTwoPassQuestion(question) { return !!getTwoPassType(question) }
 
 function parseTimeFromQuestion(question) {
   var q = question.toLowerCase()
@@ -88,13 +105,6 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '    Also use chart_type "table" for ranked lists with multiple columns.',
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
-     '21. For improvement/decline questions across periods, always check favorable_direction from the catalogue before deciding the comparison direction.',
-    '    favorable_direction = "i": improvement means the value INCREASED from old to new period → HAVING new_val > old_val',
-    '    favorable_direction = "d": improvement means the value DECREASED from old to new period → HAVING new_val < old_val',
-    '22. Column aliases defined in SELECT cannot be used in HAVING. Always repeat the full expression in HAVING.',
-'    WRONG: HAVING new_value < old_value',
-'    CORRECT: HAVING AVG(CASE WHEN condition2 THEN metric END) < AVG(CASE WHEN condition1 THEN metric END)',
-   
     '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
   ].join('\n')
 }
@@ -187,25 +197,30 @@ export async function POST(request) {
   }
 
     // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
-  if (isTwoPassQuestion(question)) {
+  var twoPassType = getTwoPassType(question)
+  if (twoPassType) {
 
-    // ── Pass 1: Deterministic entity identification (no LLM) ────────────────
+    // ── Pass 1 ────────────────────────────────────────────────────────────────
+    var targetKpi, entityField, pass1Query, pass1Results, periodUsed
+
+    if (twoPassType === 'performance') {
+    // ── PERFORMANCE: deterministic SQL, no LLM ──────────────────────────────
     // Step 1 — select performance KPI from metadata
-    var targetKpi = (function() {
+    targetKpi = (function() {
       var primary = metadata.find(function(m) {
         return m.is_output !== 'N' && m.definition && m.definition.toUpperCase().includes('PRIMARY PERFORMANCE INDICATOR')
       })
       if (primary) return primary.field_name
-      var high = metadata.filter(function(m) {
+      var highP = metadata.filter(function(m) {
         return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi') && (m.business_priority || '').toLowerCase() === 'high'
       })
-      if (high.length) return high[0].field_name
-      var any = metadata.find(function(m) { return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi') })
-      return any ? any.field_name : null
+      if (highP.length) return highP[0].field_name
+      var anyK = metadata.find(function(m) { return m.is_output !== 'N' && (m.type === 'kpi' || m.type === 'derived_kpi') })
+      return anyK ? anyK.field_name : null
     })()
 
     // Step 2 — select entity dimension from metadata
-    var entityField = (function() {
+    entityField = (function() {
       var dims = metadata.filter(function(m) {
         return m.is_output !== 'N' && m.type === 'dimension' &&
           !/year|month|day|date|sort|order|current_|duration|interval/i.test(m.field_name)
@@ -227,7 +242,7 @@ export async function POST(request) {
     var favDir    = kpiMeta ? (kpiMeta.favorable_direction || 'i') : 'i'
     var kpiUnit   = kpiMeta ? (kpiMeta.unit || '') : ''
     var kpiDisplay = kpiMeta ? (kpiMeta.display_name || targetKpi) : targetKpi
-    var periodUsed = periodConds.label
+    periodUsed = periodConds.label
 
     // Step 3 — detect over vs underperformance from question
     var isOver = /overperform|best|top|highest|outperform/i.test(question)
@@ -249,7 +264,7 @@ export async function POST(request) {
       'ORDER BY current_value ' + orderDir,
     ].join(' ')
 
-    var pass1Query = {
+    pass1Query = {
       id: 'pass1_ranking',
       title: (isOver ? 'Outperforming' : 'Underperforming') + ' Entities by ' + kpiDisplay,
       chart_type: 'bar',
@@ -261,7 +276,7 @@ export async function POST(request) {
       insight: 'Entities ' + (havingOp === '<' ? 'below' : 'above') + ' portfolio average ' + kpiDisplay,
     }
 
-    var pass1Results = []
+    pass1Results = []
     try {
       pass1Results = await query(pass1SQL)
     } catch(err) {
@@ -282,8 +297,69 @@ export async function POST(request) {
       })
     }
 
+    } else {
+    // ── ANALYTICAL: LLM-driven Pass 1 ───────────────────────────────────────
+    periodUsed = periodConds.label
+    var analyticalPass1Prompt = [
+      '## CRITICAL — LABEL COLUMN',
+      'Use a SINGLE raw dimension column as label — NEVER concatenate. Label values will be used in WHERE IN filter.',
+      '',
+      '## TASK',
+      'Generate ONE SQL query that identifies the specific entities relevant to this question.',
+      'The question asks for a specific analytical ranking (range, variance, pattern, etc) — not a simple vs-average comparison.',
+      'Write the exact SQL needed to answer the first part of the question (identification/ranking only).',
+      '',
+      '## QUESTION', question,
+      '',
+      promptBase,
+      '',
+      '## OUTPUT — JSON only',
+      '{"query":{"id":"pass1_ranking","title":"...","chart_type":"bar","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"..."},"target_kpi":"field_name","entity_field":"field_name","period_used":"' + periodConds.label + '"}',
+    ].join('\n')
+
+    var analyticalPass1Parsed
+    try {
+      analyticalPass1Parsed = await callOpenAI(
+        'Senior BI SQL engineer. Return only valid JSON. Table: ' + tbl + '. ONLY use fields from the catalogue.',
+        analyticalPass1Prompt, 800
+      )
+    } catch(err) {
+      return Response.json({
+        question, error: null,
+        queries: [{ id: 'pass1_error', title: 'Analysis Failed', chart_type: 'error', data: [], error: 'Could not identify entities. Try rephrasing your question.' }],
+        narrative: null, periodUsed: periodConds.label,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    pass1Query  = analyticalPass1Parsed.query
+    targetKpi   = analyticalPass1Parsed.target_kpi   || ''
+    entityField = analyticalPass1Parsed.entity_field || 'label'
+    periodUsed  = analyticalPass1Parsed.period_used  || periodConds.label
+
+    try {
+      pass1Results = await query(pass1Query.sql)
+    } catch(err) {
+      return Response.json({
+        question, error: null,
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'Pass 1 SQL error: ' + err.message })],
+        narrative: null, periodUsed,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+
+    if (!pass1Results || !pass1Results.length) {
+      return Response.json({
+        question, error: null,
+        queries: [Object.assign({}, pass1Query, { data: [], error: 'No results found for ' + periodUsed + '.' })],
+        narrative: null, periodUsed,
+        usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+      })
+    }
+    } // end else analytical
+
     // Extract entity list from Pass 1 results
-    var entityList = pass1Results.map(function(r) { return r['label'] }).filter(Boolean)
+    var entityList = pass1Results.map(function(r) { return r[pass1Query.label_key || 'label'] || r['label'] }).filter(Boolean)
 
     // Find target KPI dependencies from metadata
     var targetKpiMeta   = metadata.find(function(m) { return m.field_name === targetKpi })
