@@ -683,7 +683,7 @@ export default function SetupScreen({ onReady }) {
       <div style={pageStyle}>
         <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
           <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
-          <h1 style={headingStyle}>Configure your dataset</h1>
+          <h1 style={headingStyle}>Configure your datasets</h1>
           <p style={subStyle}>Select your data source, set the time horizon and apply any required filters.</p>
         </div>
 
