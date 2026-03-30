@@ -106,6 +106,10 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
     '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
+    '23. For "which entity" singular questions, use LIMIT 1 not LIMIT 10.',
+'    For range/spread questions, generate two queries:',
+'    Q1: identify the entity (LIMIT 1)',  
+'    Q2: show the detail breakdown (date, max, min, range) for that entity using a subquery to reference Q1 result',
   ].join('\n')
 }
 
