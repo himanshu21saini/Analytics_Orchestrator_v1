@@ -918,7 +918,7 @@ export default function SetupScreen({ onReady }) {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <h2 style={{ fontSize: 17, fontWeight: 700, color: '#B8A0F0', fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>Ask Questions</h2>
-                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'rgba(155,127,227,0.12)', border: '1px solid rgba(155,127,227,0.25)', color: '#B8A0F0', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Zero cost</span>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'rgba(155,127,227,0.12)', border: '1px solid rgba(155,127,227,0.25)', color: '#B8A0F0', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}></span>
               </div>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.65 }}>
                 Start with a blank slate. Ask anything about your data — get instant SQL-powered answers, driver analysis and trend breakdowns. No queries generated upfront.
