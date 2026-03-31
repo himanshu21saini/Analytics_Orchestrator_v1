@@ -604,6 +604,7 @@ if (ct === 'waterfall') {
   <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
 
   {/* Ask */}
+  {prefs.askPanel !== false && (
   <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
     onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
     onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
@@ -614,12 +615,13 @@ if (ct === 'waterfall') {
       <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
     </svg>
     Ask
-  </button>
+  </button> )}
 
   {/* Separator */}
   <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
 
   {/* Track KPI */}
+  {prefs.trackPanel !== false && (
   <div style={{ position: 'relative' }}>
     <button onClick={function() { setShowTrackMenu(function(v) { return !v }) }}
       style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)', border: '1px solid rgba(16,196,138,0.3)', borderRadius: 'var(--radius-md)', color: '#10C48A', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
@@ -651,7 +653,7 @@ if (ct === 'waterfall') {
       </div>
     )}
   </div>
-
+  )}
   {/* Separator */}
   <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
 
