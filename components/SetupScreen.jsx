@@ -1088,12 +1088,15 @@ export default function SetupScreen({ onReady }) {
         {/* ── Dashboard Panels (Section 5 or 4) ── */}
         <SectionCard n={mandatoryFilterFields.length > 0 ? '5' : '4'} title="Dashboard panels">
           <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
-          {[
+                {[
+            { key: 'summary',        label: 'Generate Summary',    desc: 'Executive narrative report' },      
             { key: 'decisions',      label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
-            { key: 'summary',        label: 'Generate Summary',    desc: 'Executive narrative report' },
             { key: 'forecast',       label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
+            { key: 'askPanel',       label: 'Ask Questions',       desc: 'Natural language query interface' },
+            { key: 'trackPanel',     label: 'Track KPI',           desc: 'Segment tracking across months' },
             { key: 'queryInspector', label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
             { key: 'coveragePanel',  label: 'Coverage Report',     desc: 'Explain why KPIs or charts were skipped' },
+
           ].map(function(item) {
             var on = prefs[item.key] !== false
             return (
