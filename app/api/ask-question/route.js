@@ -117,6 +117,10 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '    WRONG: SELECT entity, MAX(metric)-MIN(metric) FROM tbl WHERE period GROUP BY entity',
     '24. For "which entity" singular questions (which branch, which region), always use LIMIT 1.',
     '    For range/spread questions generate 2 queries: Q1 identifies the entity (LIMIT 1), Q2 shows date/max/min/range detail for that entity.',
+    '25. For labels/grouping, always prefer human-readable name columns (e.g. branch_name) over numeric ID columns (e.g. branch_id). Only use an ID column if no corresponding name column exists in the catalogue.',
+'26. For "highest/lowest single-day" questions, ALWAYS use a subquery that groups by entity + date, then ORDER BY + LIMIT on the outer query.',
+'    CORRECT: SELECT sub.dim AS label, sub.daily_val AS current_value FROM (SELECT dim, date_col, AGG(metric) AS daily_val FROM tbl WHERE period GROUP BY dim, date_col) sub ORDER BY sub.daily_val DESC LIMIT 1',
+'    CRITICAL: The outer SELECT must ONLY reference columns defined in the subquery (dim, date_col, daily_val). NEVER use original table columns or aggregate functions in the outer query.',
   ].join('\n')
 }
 
@@ -232,13 +236,23 @@ export async function POST(request) {
 
     // Step 2 — select entity dimension from metadata
     entityField = (function() {
-      var dims = metadata.filter(function(m) {
-        return m.is_output !== 'N' && m.type === 'dimension' &&
-          !/year|month|day|date|sort|order|current_|duration|interval/i.test(m.field_name)
-      })
-      var high = dims.find(function(m) { return (m.business_priority || '').toLowerCase() === 'high' })
-      return high ? high.field_name : (dims[0] ? dims[0].field_name : null)
-    })()
+  var dims = metadata.filter(function(m) {
+    return m.is_output !== 'N' && m.type === 'dimension' &&
+      !/year|month|day|date|sort|order|current_|duration|interval/i.test(m.field_name)
+  })
+  var high = dims.filter(function(m) { return (m.business_priority || '').toLowerCase() === 'high' })
+  var pool = high.length ? high : dims
+
+  // Prefer human-readable name columns over ID columns
+  var nameCol = pool.find(function(m) { return /name/i.test(m.field_name) && (m.data_type || '').toLowerCase() === 'string' })
+  if (nameCol) return nameCol.field_name
+
+  // Then prefer any String dimension over Integer/numeric IDs
+  var stringCol = pool.find(function(m) { return (m.data_type || '').toLowerCase() === 'string' })
+  if (stringCol) return stringCol.field_name
+
+  return pool[0] ? pool[0].field_name : null
+})()
 
     if (!targetKpi || !entityField) {
       return Response.json({
