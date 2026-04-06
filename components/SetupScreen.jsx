@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { APP_NAME, APP_TAGLINE } from '../lib/app-config'
+import FormatConfirmModal from './FormatConfirmModal'
 
 var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -368,6 +369,7 @@ export default function SetupScreen({ onReady }) {
   var [autoGenResult, setAutoGenResult] = useState(null)
   var [savingMeta,    setSavingMeta]    = useState(false)
   var [savingData,    setSavingData]    = useState(false) 
+  var [formatModal,   setFormatModal]   = useState(null)  
 
   // ── Mandatory filters ────────────────────────────────────────────────────
   var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])
@@ -439,6 +441,27 @@ export default function SetupScreen({ onReady }) {
     await loadLists()
     setSelDataset(savedDatasetId)
     setDataMode('existing')
+
+    // Fetch the dataset_format we just stored to decide whether to show modal
+    var fmtRes = await fetch('/api/datasets')
+    var fmtJson = await fmtRes.json()
+    var savedDs = (fmtJson.datasets || []).find(function(d) { return String(d.id) === savedDatasetId })
+    var detected = savedDs && savedDs.dataset_format
+    if (typeof detected === 'string') { try { detected = JSON.parse(detected) } catch(e) { detected = null } }
+
+    if (detected && detected.format === 'long_hierarchical') {
+      // Get column list from column_map for the modal
+      var colMap = savedDs.column_map
+      if (typeof colMap === 'string') { try { colMap = JSON.parse(colMap) } catch(e) { colMap = {} } }
+      var allCols = Object.values(colMap || {})
+      setFormatModal({
+        datasetId: savedDatasetId,
+        datasetName: dataset.name,
+        allColumns: allCols,
+        detectedFormat: detected,
+      })
+    }
+
     setDataFile(null)
     setDataName('')
   } catch(err) { setError('Dataset save failed: ' + err.message) }
@@ -686,6 +709,16 @@ export default function SetupScreen({ onReady }) {
 
     return (
       <div style={pageStyle}>
+        {formatModal && (
+          <FormatConfirmModal
+            datasetId={formatModal.datasetId}
+            datasetName={formatModal.datasetName}
+            allColumns={formatModal.allColumns}
+            detectedFormat={formatModal.detectedFormat}
+            onClose={function() { setFormatModal(null) }}
+            onConfirm={function() { setFormatModal(null) }}
+          />
+        )}
         <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
           <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>{APP_NAME}</p>
           <h1 style={headingStyle}>Configure your dataset</h1>
