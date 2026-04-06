@@ -585,15 +585,7 @@ export default function SetupScreen({ onReady }) {
     setShowConfirm(false); setError(''); setWorking(true)
     var finalDatasetId = selDataset; var finalMetaId = selMeta
     try {
-      if (dataMode === 'upload') {
-        if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
-        var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
-        finalDatasetId = String(dataset.id); await loadLists()
-      }
-      if (metaMode === 'upload') {
-        setError('Please save your metadata file first using the "Save Metadata" button before generating.')
-        setWorking(false); return
-      }
+      
       var activePairs = periodPairs
       if (!activePairs.length) {
         try {
@@ -688,11 +680,9 @@ export default function SetupScreen({ onReady }) {
 
   // ── Step 1: Configure Dataset ─────────────────────────────────────────────
   if (step === 1) {
-    var canNext = !loadingLists && (
-      (dataMode === 'existing' && !!selDataset) || (dataMode === 'upload' && !!dataFile)
-    ) && (
-      (metaMode === 'existing' && !!selMeta) || (metaMode === 'upload' && !!metaFile)
-    )
+    var canNext = !loadingLists &&
+      dataMode === 'existing' && !!selDataset &&
+      metaMode === 'existing' && !!selMeta
 
     return (
       <div style={pageStyle}>
