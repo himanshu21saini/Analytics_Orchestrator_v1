@@ -367,6 +367,7 @@ export default function SetupScreen({ onReady }) {
   var [autoGenState,  setAutoGenState]  = useState('idle')
   var [autoGenResult, setAutoGenResult] = useState(null)
   var [savingMeta,    setSavingMeta]    = useState(false)
+  var [savingData,    setSavingData]    = useState(false) 
 
   // ── Mandatory filters ────────────────────────────────────────────────────
   var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])
@@ -429,6 +430,20 @@ export default function SetupScreen({ onReady }) {
     setLoadingLists(false)
   }
 
+  async function handleSaveDataset() {
+  if (!dataFile) return
+  setSavingData(true); setError(''); setProgress('')
+  try {
+    var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
+    var savedDatasetId = String(dataset.id)
+    await loadLists()
+    setSelDataset(savedDatasetId)
+    setDataMode('existing')
+    setDataFile(null)
+    setDataName('')
+  } catch(err) { setError('Dataset save failed: ' + err.message) }
+  setSavingData(false); setProgress('')
+}
   async function handleSaveMetadata() {
     if (!metaFile) return
     setSavingMeta(true); setError('')
@@ -711,10 +726,15 @@ export default function SetupScreen({ onReady }) {
                 </select>
               : <div style={{ marginBottom: 14 }}>
                   <input type="text" placeholder="Dataset name (optional)" value={dataName} onChange={function(e){setDataName(e.target.value)}} style={inputStyle} />
-                  <div onClick={function(){dataRef.current&&dataRef.current.click()}} style={{ border: '1px dashed '+(dataFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: dataFile?'var(--accent-dim)':'transparent' }}>
+                 <div onClick={function(){dataRef.current&&dataRef.current.click()}} style={{ border: '1px dashed '+(dataFile?'var(--accent-border)':'var(--border)'), borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer', background: dataFile?'var(--accent-dim)':'transparent' }}>
                     <input ref={dataRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={function(e){setDataFile(e.target.files[0]||null)}} />
                     <p style={{ fontSize: 11, color: dataFile?'var(--text-accent)':'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>{dataFile?dataFile.name:'Select dataset file (.xlsx or .csv)'}</p>
                   </div>
+                  {dataFile && (
+                    <button onClick={handleSaveDataset} disabled={savingData} style={{ marginTop: 8, width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: savingData?'transparent':'var(--accent-dim)', border: '1px solid '+(savingData?'var(--border)':'var(--accent-border)'), color: savingData?'var(--text-tertiary)':'var(--text-accent)', fontSize: 11, fontWeight: 600, cursor: savingData?'not-allowed':'pointer', fontFamily: 'var(--font-display)', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      {savingData ? <><span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} /> {progress || 'Saving...'}</> : '↑ Save Dataset'}
+                    </button>
+                  )}
                 </div>
             }
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
