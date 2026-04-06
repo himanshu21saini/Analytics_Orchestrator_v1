@@ -167,7 +167,7 @@ export async function POST(request) {
       var colMap = {}
       cols.forEach(function(c) { colMap[c.raw] = c.sanitized })
 
-      // Detect dataset format (wide vs long_hierarchical)
+      // Detect dataset format (wide vs long_hierarchical) 
       var detectedFormat = detectDatasetFormat(sampleRows, cols)
       console.log('=== upload-dataset init: detected format:', detectedFormat.format,
                   detectedFormat.format === 'long_hierarchical'
