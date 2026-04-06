@@ -255,6 +255,22 @@ export async function POST(request) {
       return Response.json({ dataset: ds[0] })
     }
 
+    // ── UPDATE-FORMAT ───────────────────────────────────────────────────────
+    // Updates the dataset_format JSONB after user confirms/corrects in the modal
+    if (action === 'update-format') {
+      var datasetId      = body.datasetId
+      var datasetFormat  = body.datasetFormat
+      if (!datasetId || !datasetFormat) {
+        return Response.json({ error: 'datasetId and datasetFormat required.' }, { status: 400 })
+      }
+      await execute(
+        'UPDATE datasets SET dataset_format = $1 WHERE id = $2',
+        [JSON.stringify(datasetFormat), datasetId]
+      )
+      console.log('=== upload-dataset update-format: dataset', datasetId, 'format:', datasetFormat.format)
+      return Response.json({ ok: true })
+    }
+    
     return Response.json({ error: 'Unknown action: ' + action }, { status: 400 })
 
   } catch (err) {
