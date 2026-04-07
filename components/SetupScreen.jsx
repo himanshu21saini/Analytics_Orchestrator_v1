@@ -44,13 +44,13 @@ function detectPeriodPairs(ymRows) {
   return pairs
 }
 
+// Fallback slider range (24 calendar months ending today) used when no period pairs / no data
 var TODAY = new Date()
-var SLIDER_MONTHS = []
+var FALLBACK_SLIDER_MONTHS = []
 for (var si = 23; si >= 0; si--) {
   var sd = new Date(TODAY.getFullYear(), TODAY.getMonth() - si, 1)
-  SLIDER_MONTHS.push({ year: sd.getFullYear(), month: sd.getMonth() + 1 })
+  FALLBACK_SLIDER_MONTHS.push({ year: sd.getFullYear(), month: sd.getMonth() + 1 })
 }
-var SLIDER_DEFAULT = SLIDER_MONTHS.length - 1
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -351,7 +351,8 @@ export default function SetupScreen({ onReady }) {
   var [dataName,     setDataName]     = useState('')
   var [metaName,     setMetaName]     = useState('')
   var [viewType,     setViewType]     = useState('YTD')
-  var [sliderIdx,    setSliderIdx]    = useState(SLIDER_DEFAULT)
+  var [sliderMonths, setSliderMonths] = useState(FALLBACK_SLIDER_MONTHS)
+  var [sliderIdx,    setSliderIdx]    = useState(FALLBACK_SLIDER_MONTHS.length - 1)
   var [compType,     setCompType]     = useState('YoY')
   var [periodPairs,  setPeriodPairs]  = useState([])
   var [selPairIdx,   setSelPairIdx]   = useState(0)
@@ -375,7 +376,7 @@ export default function SetupScreen({ onReady }) {
   var [mandatoryFilterFields, setMandatoryFilterFields] = useState([])
   var [mandatoryFilterValues, setMandatoryFilterValues] = useState({})
 
-  var selYearMonth = SLIDER_MONTHS[sliderIdx] || SLIDER_MONTHS[SLIDER_DEFAULT]
+  var selYearMonth = sliderMonths[sliderIdx] || sliderMonths[sliderMonths.length - 1] || { year: TODAY.getFullYear(), month: TODAY.getMonth() + 1 }
   var selYear  = selYearMonth.year
   var selMonth = selYearMonth.month
   var allowedComp = COMPARISON_OPTIONS[viewType] || []
@@ -415,6 +416,39 @@ export default function SetupScreen({ onReady }) {
       .catch(function() { setPeriodPairs([]); setSelPairIdx(0); setMandatoryFilterFields([]); setMandatoryFilterValues({}) })
   }, [selMeta, metaMode])
 
+  // ── Load data-driven slider range whenever dataset / metadata / pair changes ──
+  useEffect(function() {
+    var dsId = dataMode === 'existing' ? selDataset : null
+    if (!dsId || !periodPairs.length) {
+      setSliderMonths(FALLBACK_SLIDER_MONTHS)
+      setSliderIdx(FALLBACK_SLIDER_MONTHS.length - 1)
+      return
+    }
+    var pairsPayload = periodPairs.map(function(p) {
+      return { yearField: p.yearField, monthField: p.monthField, label: p.label }
+    })
+    fetch('/api/dataset-period-range', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datasetId: dsId, pairs: pairsPayload }),
+    })
+      .then(function(r) { return r.json() })
+      .then(function(j) {
+        var returned = (j && j.pairs) || []
+        var active = returned[selPairIdx] || returned[0]
+        if (active && active.months && active.months.length) {
+          setSliderMonths(active.months)
+          setSliderIdx(active.months.length - 1)  // Option A: reset to latest
+        } else {
+          setSliderMonths(FALLBACK_SLIDER_MONTHS)
+          setSliderIdx(FALLBACK_SLIDER_MONTHS.length - 1)
+        }
+      })
+      .catch(function() {
+        setSliderMonths(FALLBACK_SLIDER_MONTHS)
+        setSliderIdx(FALLBACK_SLIDER_MONTHS.length - 1)
+      })
+  }, [selDataset, dataMode, periodPairs, selPairIdx])
+  
   function handleMandatoryFilterChange(fieldName, value) {
     setMandatoryFilterValues(function(prev) { var next = Object.assign({}, prev); next[fieldName] = value; return next })
   }
@@ -835,10 +869,10 @@ async function runGenerateMetadata(dsId) {
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-body)' }}>As-of date</p>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{MONTH_NAMES[selMonth-1]} {selYear}</span>
               </div>
-              <input type="range" min={0} max={SLIDER_MONTHS.length-1} value={sliderIdx} onChange={function(e){setSliderIdx(parseInt(e.target.value))}} style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }} />
+              <input type="range" min={0} max={Math.max(0, sliderMonths.length - 1)} value={sliderIdx} onChange={function(e){setSliderIdx(parseInt(e.target.value))}} style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }} disabled={sliderMonths.length < 2} />
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
-                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{MONTH_NAMES[SLIDER_MONTHS[0].month-1].slice(0,3)} {SLIDER_MONTHS[0].year}</span>
-                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{MONTH_NAMES[SLIDER_MONTHS[SLIDER_MONTHS.length-1].month-1].slice(0,3)} {SLIDER_MONTHS[SLIDER_MONTHS.length-1].year}</span>
+                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{sliderMonths[0] ? MONTH_NAMES[sliderMonths[0].month-1].slice(0,3) + ' ' + sliderMonths[0].year : ''}</span>
+                <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{sliderMonths[sliderMonths.length-1] ? MONTH_NAMES[sliderMonths[sliderMonths.length-1].month-1].slice(0,3) + ' ' + sliderMonths[sliderMonths.length-1].year : ''}</span>
               </div>
             </div>
             {periodPairs.length > 1 && (
