@@ -28,8 +28,22 @@ function detectDatasetFormat(sampleRows, cols) {
   var numericCols = cols.filter(function(c) { return c.type === 'NUMERIC' })
   var textCols    = cols.filter(function(c) { return c.type === 'TEXT' })
 
-  // Long format signature: exactly 1 numeric column + 3+ text columns
-  if (numericCols.length !== 1 || textCols.length < 3) return format
+  // Among numeric columns, find ones that look like an actual VALUE column.
+  // Real value columns have high cardinality — time/year/month/sort/version
+  // columns are numeric but only have a handful of distinct values.
+  var totalRows = sampleRows.length
+  var valueCandidates = numericCols.filter(function(c) {
+    var unique = {}
+    sampleRows.forEach(function(r) {
+      var v = r[c.raw]
+      if (v !== null && v !== undefined && String(v).trim() !== '') unique[String(v)] = true
+    })
+    var uniqueCount = Object.keys(unique).length
+    return uniqueCount > Math.max(10, totalRows * 0.3)
+  })
+
+  // Long format signature: exactly 1 high-cardinality numeric col + 3+ text cols
+  if (valueCandidates.length !== 1 || textCols.length < 3) return format
 
   // Check cardinality of text columns — long format has heavy value repetition
   // because hierarchy values repeat thousands of times across periods
@@ -64,9 +78,10 @@ function detectDatasetFormat(sampleRows, cols) {
   // Need at least 3 low-cardinality text columns for hierarchical long format
   if (lowCardinalityCols.length < 3) return format
 
+  
   // Looks like long hierarchical format
   format.format = 'long_hierarchical'
-  format.valueColumn = numericCols[0].sanitized
+  format.valueColumn = valueCandidates[0].sanitized
 
   // Hierarchy columns = low-cardinality text cols, ordered by ascending cardinality
   // (L1 has fewest values, L3 has most). Exclude date-like cols.
