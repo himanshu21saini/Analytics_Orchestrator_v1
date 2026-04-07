@@ -154,6 +154,7 @@ async function generateWideFormatMetadata(tbl, apiKey) {
 // ═══════════════════════════════════════════════════════════════════════════
 async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   var hierCols = datasetFormat.hierarchyColumns || []
+  var dimCols  = datasetFormat.dimensionColumns || []
   if (hierCols.length < 2) {
     return Response.json({ error: 'Long format dataset has fewer than 2 hierarchy columns. Re-confirm format.' }, { status: 400 })
   }
@@ -168,8 +169,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   if (!distinctRows.length) return Response.json({ error: 'No hierarchy rows found in dataset.' }, { status: 400 })
 
   // ── Step 2: Build the full set of nodes (L1, L2, L3, ...) ───────────────
-  // For each distinct row, walk left-to-right and accumulate every prefix as a node
-  var nodeMap = {}  // path → { path, name, level, parent, is_leaf }
+  var nodeMap = {}
   distinctRows.forEach(function(row) {
     var pathParts = []
     for (var i = 0; i < hierCols.length; i++) {
@@ -189,7 +189,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
           is_leaf:     isLeafLevel,
         }
       } else if (isLeafLevel) {
-        nodeMap[path].is_leaf = true  // mark leaf if seen as leaf in any row
+        nodeMap[path].is_leaf = true
       }
     }
   })
@@ -199,10 +199,26 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     return a.node_path.localeCompare(b.node_path)
   })
 
-  // ── Step 3: LLM enrichment ──────────────────────────────────────────────
-  // Send the full tree (typically <300 nodes), ask for display name + definition
-  // for every node, favorable_direction + business_priority + unit for L1 only,
-  // and flagged overrides for descendants whose nature differs from parent.
+  // ── Step 3: Sample dimension columns for the second sheet ───────────────
+  var dimSummary = []
+  if (dimCols.length) {
+    try {
+      var dimSampleRows = await query('SELECT DISTINCT ' + dimCols.join(', ') + ' FROM ' + tbl + ' LIMIT 200')
+      dimCols.forEach(function(col) {
+        var unique = {}
+        dimSampleRows.forEach(function(r) {
+          var v = r[col]
+          if (v !== null && v !== undefined && String(v).trim() !== '') unique[String(v)] = true
+        })
+        dimSummary.push({ field_name: col, sample_values: Object.keys(unique).slice(0, 20) })
+      })
+    } catch(e) {
+      // Non-fatal — just skip dim sampling
+      dimCols.forEach(function(col) { dimSummary.push({ field_name: col, sample_values: [] }) })
+    }
+  }
+
+  // ── Step 4: LLM enrichment for hierarchy + dimensions ───────────────────
   var treeForPrompt = allNodes.map(function(n) {
     return { path: n.node_path, level: n.level, is_leaf: n.is_leaf }
   })
@@ -210,36 +226,57 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   var prompt = [
     '## TASK',
     'Generate metadata for a hierarchical KPI tree from a financial/BI dataset.',
-    'The tree below represents one KPI hierarchy where each node is a business metric.',
-    'For every node, provide a display_name and definition.',
+    'Some categories represent balance sheet items (point-in-time stocks) and others',
+    'represent income statement items (period flows). Use accumulation_type accordingly:',
+    '  - Stocks (Assets, Liabilities, Equity, Loans, Deposits): point_in_time',
+    '  - Flows (Revenue, Income, Expenses, Tax, NIX): cumulative',
+    '',
+    'For every node, provide a display_name, definition, and accumulation_type.',
     'For LEVEL 1 nodes only, also provide favorable_direction, business_priority, and unit.',
     'For descendants whose nature DIFFERS from their parent (e.g. an expense line under Revenue,',
     'or an asset that is bad to have like NPLs), set favorable_direction explicitly and add a',
     'review_note explaining why. All other descendants leave favorable_direction empty (they inherit).',
     '',
+    'ALSO generate metadata for the dimension columns listed below.',
+    '',
     '## TREE NODES',
     JSON.stringify(treeForPrompt, null, 2),
     '',
-    '## OUTPUT — JSON object with key "nodes" containing an array',
-    'Each element must have exactly these keys:',
+    '## DIMENSION COLUMNS',
+    JSON.stringify(dimSummary, null, 2),
+    '',
+    '## OUTPUT — JSON object with two keys: "nodes" and "dimensions"',
+    '"nodes" is an array. Each element has exactly:',
     '{',
     '  "node_path": "exact path from input",',
     '  "display_name": "clean human-readable name",',
     '  "definition": "one-line business definition",',
-    '  "favorable_direction": "i | d | (empty to inherit from parent)",',
+    '  "accumulation_type": "cumulative | point_in_time",',
+    '  "favorable_direction": "i | d | (empty to inherit)",',
     '  "business_priority": "High | Medium | Low | (empty to inherit)",',
     '  "unit": "USD | % | count | (empty to inherit)",',
-    '  "review_notes": "(only fill if this is an override or ambiguous, else empty)"',
+    '  "review_notes": "(only fill if override or ambiguous, else empty)"',
+    '}',
+    '',
+    '"dimensions" is an array. Each element has exactly:',
+    '{',
+    '  "field_name": "exact dimension column name from input",',
+    '  "display_name": "clean human-readable name",',
+    '  "definition": "one-line business definition",',
+    '  "sample_values": "comma-separated sample values",',
+    '  "mandatory_filter_value": "(LEAVE EMPTY — user fills this in manually)",',
+    '  "review_notes": "(suggest if user should likely set a mandatory filter, e.g. statement_type)"',
     '}',
     '',
     '## RULES',
-    '1. Every node from the input must appear in the output exactly once.',
-    '2. node_path must match the input exactly.',
+    '1. Every input node and dimension must appear in output exactly once.',
+    '2. node_path / field_name must match input exactly.',
     '3. L1 nodes: ALWAYS set favorable_direction, business_priority, unit.',
-    '4. L2/L3+ nodes: leave favorable_direction empty UNLESS it differs from the parent.',
-    '5. When you set an override on a descendant, add a review_note explaining why.',
-    '6. If an L1 direction is genuinely ambiguous (e.g. Liabilities), leave favorable_direction empty and add a review_note saying "Could not determine — please set".',
-    '7. Return ONLY {"nodes": [...]}. No markdown. No preamble.',
+    '4. L2/L3+ nodes: leave favorable_direction empty UNLESS it differs from parent.',
+    '5. ALWAYS leave mandatory_filter_value empty for dimensions — the user fills it.',
+    '6. If a dimension looks like it should have a mandatory filter (e.g. mixing Balance Sheet + P&L, mixing Actual + Plan + Forecast, multiple forecast versions), add a review_note suggesting it.',
+    '7. If an L1 direction is genuinely ambiguous (e.g. Liabilities), leave favorable_direction empty and add a review_note.',
+    '8. Return ONLY {"nodes": [...], "dimensions": [...]}. No markdown. No preamble.',
   ].join('\n')
 
   var response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -264,21 +301,25 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   try { parsed = JSON.parse(content.replace(/```json|```/g, '').trim()) }
   catch(e) { return Response.json({ error: 'Could not parse LLM response.' }, { status: 500 }) }
 
-  var llmNodes = parsed.nodes || (Array.isArray(parsed) ? parsed : Object.values(parsed)[0])
-  if (!Array.isArray(llmNodes)) return Response.json({ error: 'Expected array of nodes from LLM.' }, { status: 500 })
+  var llmNodes      = parsed.nodes      || []
+  var llmDimensions = parsed.dimensions || []
+  if (!Array.isArray(llmNodes))      return Response.json({ error: 'Expected "nodes" array from LLM.' }, { status: 500 })
+  if (!Array.isArray(llmDimensions)) llmDimensions = []
 
-  // Index LLM output by path for fast lookup
-  var llmByPath = {}
-  llmNodes.forEach(function(n) { if (n.node_path) llmByPath[n.node_path] = n })
+  var llmNodesByPath = {}
+  llmNodes.forEach(function(n) { if (n.node_path) llmNodesByPath[n.node_path] = n })
+  var llmDimsByName = {}
+  llmDimensions.forEach(function(d) { if (d.field_name) llmDimsByName[d.field_name] = d })
 
-  // ── Step 4: Merge structural nodes with LLM enrichment ──────────────────
-  var mergedRows = allNodes.map(function(n) {
-    var enrich = llmByPath[n.node_path] || {}
+  // ── Step 5: Merge structural nodes with LLM enrichment ──────────────────
+  var hierarchyRows = allNodes.map(function(n) {
+    var enrich = llmNodesByPath[n.node_path] || {}
     return {
       node_path:           n.node_path,
       level:               n.level,
       display_name:        enrich.display_name        || n.node_name,
       definition:          enrich.definition          || '',
+      accumulation_type:   enrich.accumulation_type   || '',
       favorable_direction: enrich.favorable_direction || '',
       business_priority:   enrich.business_priority   || '',
       unit:                enrich.unit                || '',
@@ -286,14 +327,29 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     }
   })
 
-  var flaggedCount = mergedRows.filter(function(r) { return r.review_notes && String(r.review_notes).trim() }).length
+  var dimensionRows = dimSummary.map(function(d) {
+    var enrich = llmDimsByName[d.field_name] || {}
+    return {
+      field_name:             d.field_name,
+      display_name:           enrich.display_name           || d.field_name,
+      definition:             enrich.definition             || '',
+      sample_values:          enrich.sample_values          || d.sample_values.join(', '),
+      mandatory_filter_value: '',  // ALWAYS blank — user fills in
+      review_notes:           enrich.review_notes           || '',
+    }
+  })
 
-  // ── Step 5: Build Excel ─────────────────────────────────────────────────
+  var flaggedCount = hierarchyRows.filter(function(r) { return r.review_notes && String(r.review_notes).trim() }).length +
+                     dimensionRows.filter(function(r) { return r.review_notes && String(r.review_notes).trim() }).length
+
+  // ── Step 6: Build Excel with two sheets + tree view ─────────────────────
   var wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mergedRows), 'Hierarchy Metadata')
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hierarchyRows), 'Hierarchy Metadata')
+  if (dimensionRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dimensionRows), 'Dimensions')
+  }
 
-  // Helper sheet showing the tree structure visually
-  var treeView = mergedRows.map(function(r) {
+  var treeView = hierarchyRows.map(function(r) {
     return {
       indent_view: '  '.repeat(r.level - 1) + r.display_name,
       node_path:   r.node_path,
@@ -308,7 +364,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
 
   return Response.json({
     base64, filename,
-    fieldCount: mergedRows.length,
+    fieldCount: hierarchyRows.length + dimensionRows.length,
     flaggedCount,
     format: 'long_hierarchical',
   })
