@@ -182,12 +182,11 @@ export async function POST(request) {
       var colMap = {}
       cols.forEach(function(c) { colMap[c.raw] = c.sanitized })
 
-      // Detect dataset format (wide vs long_hierarchical) 
-      var detectedFormat = detectDatasetFormat(sampleRows, cols)
-      console.log('=== upload-dataset init: detected format:', detectedFormat.format,
-                  detectedFormat.format === 'long_hierarchical'
-                    ? '(value=' + detectedFormat.valueColumn + ', hierarchy=' + detectedFormat.hierarchyColumns.join(',') + ')'
-                    : '')
+      // Save column map (dataset_format is set later by generate-metadata)
+      await execute(
+        'UPDATE datasets SET column_map = $1 WHERE id = $2',
+        [JSON.stringify(colMap), datasetId]
+      )
       
       // Drop old data table if exists, create fresh
       await execute('DROP TABLE IF EXISTS ds_' + datasetId, [])
@@ -201,12 +200,7 @@ export async function POST(request) {
         [JSON.stringify(colMap), JSON.stringify(detectedFormat), datasetId]
       )
       console.log('=== upload-dataset init: dataset', datasetId, 'table ds_' + datasetId, 'cols:', cols.length)
-      return Response.json({
-        datasetId: datasetId,
-        columns: cols,
-        colMap: colMap,
-        detectedFormat: detectedFormat,
-      })
+      return Response.json({ datasetId: datasetId, columns: cols, colMap: colMap })
     }
 
     // ── CHUNK ───────────────────────────────────────────────────────────────
