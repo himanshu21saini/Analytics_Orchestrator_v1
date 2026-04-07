@@ -162,6 +162,7 @@ async function generateWideFormatMetadata(tbl, apiKey) {
 async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   var hierCols  = datasetFormat.hierarchyColumns || []
   var dimCols   = datasetFormat.dimensionColumns || []
+  var timeCols  = datasetFormat.timeColumns || []
   var valueCol  = datasetFormat.valueColumn
   if (hierCols.length < 2) {
     return Response.json({ error: 'Long format dataset has fewer than 2 hierarchy columns. Re-confirm format.' }, { status: 400 })
@@ -404,6 +405,22 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
       sample_values:          enrich.sample_values || d.sample_values.join(', '),
       mandatory_filter_value: '',
       review_notes:           enrich.review_notes || '',
+    })
+  })
+
+  // Time column rows (raw names, no LLM enrichment)
+  timeCols.forEach(function(tc) {
+    fieldRows.push({
+      field_name:             tc,
+      type:                   'year_month',
+      display_name:           tc,  // raw name as requested
+      data_type:              'Integer',
+      aggregation:            '',
+      unit:                   '',
+      definition:             'Time period column',
+      sample_values:          '',
+      mandatory_filter_value: '',
+      review_notes:           '',
     })
   })
 
