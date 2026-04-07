@@ -103,7 +103,7 @@ async function generateWideFormatMetadata(tbl, apiKey) {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o', max_tokens: 8000, temperature: 0.1,
+      model: 'gpt-4o', max_tokens: 16000, temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You are a senior BI analyst. Generate precise metadata. Return valid JSON only.' },
@@ -119,7 +119,14 @@ async function generateWideFormatMetadata(tbl, apiKey) {
 
   var parsed
   try { parsed = JSON.parse(content.replace(/```json|```/g, '').trim()) }
-  catch(e) { return Response.json({ error: 'Could not parse metadata response.' }, { status: 500 }) }
+  catch(e) { console.error('=== LLM response parse error ===')
+    console.error('Error:', e.message)
+    console.error('Content length:', content.length)
+    console.error('First 500 chars:', content.slice(0, 500))
+    console.error('Last 500 chars:', content.slice(-500))
+    console.error('Finish reason:', json.choices && json.choices[0] && json.choices[0].finish_reason)
+    return Response.json({ error: 'Could not parse LLM response: ' + e.message }, { status: 500 })
+  }
 
   var fields = parsed.fields || parsed.metadata || (Array.isArray(parsed) ? parsed : Object.values(parsed)[0])
   if (!Array.isArray(fields)) return Response.json({ error: 'Expected array of fields from LLM.' }, { status: 500 })
@@ -310,7 +317,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o', max_tokens: 8000, temperature: 0.1,
+      model: 'gpt-4o', max_tokens: 16000, temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: 'You are a senior finance/BI analyst. Generate precise hierarchical metadata with inheritance. Return valid JSON only.' },
