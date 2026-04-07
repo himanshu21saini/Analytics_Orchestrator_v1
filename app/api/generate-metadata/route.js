@@ -153,10 +153,14 @@ async function generateWideFormatMetadata(tbl, apiKey) {
 // LONG HIERARCHICAL FORMAT (new)
 // ═══════════════════════════════════════════════════════════════════════════
 async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
-  var hierCols = datasetFormat.hierarchyColumns || []
-  var dimCols  = datasetFormat.dimensionColumns || []
+  var hierCols  = datasetFormat.hierarchyColumns || []
+  var dimCols   = datasetFormat.dimensionColumns || []
+  var valueCol  = datasetFormat.valueColumn
   if (hierCols.length < 2) {
     return Response.json({ error: 'Long format dataset has fewer than 2 hierarchy columns. Re-confirm format.' }, { status: 400 })
+  }
+  if (!valueCol) {
+    return Response.json({ error: 'No value column identified. Re-confirm format.' }, { status: 400 })
   }
 
   // ── Step 1: Enumerate all unique hierarchy combinations ─────────────────
@@ -199,7 +203,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     return a.node_path.localeCompare(b.node_path)
   })
 
-  // ── Step 3: Sample dimension columns for the second sheet ───────────────
+  // ── Step 3: Sample dimensions + peek at value column for the Fields sheet ─
   var dimSummary = []
   if (dimCols.length) {
     try {
@@ -213,70 +217,93 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
         dimSummary.push({ field_name: col, sample_values: Object.keys(unique).slice(0, 20) })
       })
     } catch(e) {
-      // Non-fatal — just skip dim sampling
       dimCols.forEach(function(col) { dimSummary.push({ field_name: col, sample_values: [] }) })
     }
   }
 
-  // ── Step 4: LLM enrichment for hierarchy + dimensions ───────────────────
+  // Peek at a few value column samples to help the LLM label data_type/unit
+  var valueSamples = []
+  try {
+    var vRows = await query('SELECT ' + valueCol + ' FROM ' + tbl + ' WHERE ' + valueCol + ' IS NOT NULL LIMIT 10')
+    valueSamples = vRows.map(function(r) { return r[valueCol] })
+  } catch(e) { /* non-fatal */ }
+
+  // ── Step 4: LLM enrichment ──────────────────────────────────────────────
   var treeForPrompt = allNodes.map(function(n) {
     return { path: n.node_path, level: n.level, is_leaf: n.is_leaf }
   })
 
   var prompt = [
     '## TASK',
-    'Generate metadata for a hierarchical KPI tree from a financial/BI dataset.',
-    'Some categories represent balance sheet items (point-in-time stocks) and others',
-    'represent income statement items (period flows). Use accumulation_type accordingly:',
-    '  - Stocks (Assets, Liabilities, Equity, Loans, Deposits): point_in_time',
-    '  - Flows (Revenue, Income, Expenses, Tax, NIX): cumulative',
+    'Generate metadata for a long-format hierarchical dataset. You will output:',
+    '  1. "nodes" — metadata for the KPI hierarchy tree',
+    '  2. "fields" — metadata for the numeric value column and all dimension columns',
     '',
-    'For every node, provide a display_name, definition, and accumulation_type.',
-    'For LEVEL 1 nodes only, also provide favorable_direction, business_priority, and unit.',
-    'For descendants whose nature DIFFERS from their parent (e.g. an expense line under Revenue,',
-    'or an asset that is bad to have like NPLs), set favorable_direction explicitly and add a',
-    'review_note explaining why. All other descendants leave favorable_direction empty (they inherit).',
+    '## HIERARCHY (inheritance model)',
+    'The hierarchy uses INHERITANCE. For most nodes, leave favorable_direction, accumulation_type,',
+    'business_priority, and unit BLANK — PRISM will walk up the parent chain to inherit them.',
     '',
-    'ALSO generate metadata for the dimension columns listed below.',
+    'Set these fields explicitly only at the MEANINGFUL LEVEL — usually level 2 for financial data,',
+    'because level 1 is typically just a statement container (Balance Sheet, Profit and Loss).',
+    '',
+    'Rules for filling fields on hierarchy nodes:',
+    '  - L1 nodes (statement containers): leave accumulation_type BLANK. Leave favorable_direction BLANK if ambiguous (e.g. Balance Sheet). Add a review_note if blank.',
+    '  - L2 nodes (real metric categories like NII, NIR, Assets, Liabilities): ALWAYS set accumulation_type, favorable_direction, business_priority, unit.',
+    '  - L3+ descendants: leave all four fields BLANK by default — they will inherit from L2.',
+    '  - OVERRIDE EXCEPTION: if a descendant genuinely differs from its ancestor (e.g. an expense line under a Revenue branch, or a bad-to-have asset like NPLs), set the differing field explicitly and add a review_note explaining the override.',
+    '',
+    'accumulation_type values:',
+    '  - "point_in_time" for stocks (Assets, Liabilities, Equity, Loans, Deposits, Capital)',
+    '  - "cumulative" for flows (Revenue, Income, Expenses, NIX, Tax, Fees)',
+    '',
+    '## FIELDS',
+    'For the value column, use type="value_column" and ALWAYS set data_type and aggregation.',
+    'For dimension columns, use type="dimension". Leave aggregation blank.',
+    'ALWAYS leave mandatory_filter_value blank for all fields — the user fills it manually.',
+    'Add a review_note on dimensions that likely need a mandatory filter (e.g. Statement_Type, Data_Source, Forecast_Version).',
     '',
     '## TREE NODES',
     JSON.stringify(treeForPrompt, null, 2),
     '',
+    '## VALUE COLUMN',
+    JSON.stringify({ field_name: valueCol, sample_values: valueSamples }),
+    '',
     '## DIMENSION COLUMNS',
     JSON.stringify(dimSummary, null, 2),
     '',
-    '## OUTPUT — JSON object with two keys: "nodes" and "dimensions"',
-    '"nodes" is an array. Each element has exactly:',
+    '## OUTPUT — JSON object with two keys: "nodes" and "fields"',
+    '"nodes" is an array of hierarchy entries:',
     '{',
     '  "node_path": "exact path from input",',
-    '  "display_name": "clean human-readable name",',
+    '  "display_name": "clean name",',
     '  "definition": "one-line business definition",',
-    '  "accumulation_type": "cumulative | point_in_time",',
-    '  "favorable_direction": "i | d | (empty to inherit)",',
-    '  "business_priority": "High | Medium | Low | (empty to inherit)",',
-    '  "unit": "USD | % | count | (empty to inherit)",',
-    '  "review_notes": "(only fill if override or ambiguous, else empty)"',
+    '  "accumulation_type": "cumulative | point_in_time | (blank to inherit)",',
+    '  "favorable_direction": "i | d | (blank to inherit)",',
+    '  "business_priority": "High | Medium | Low | (blank to inherit)",',
+    '  "unit": "USD | % | count | (blank to inherit)",',
+    '  "review_notes": "(fill only on L1 ambiguity or overrides)"',
     '}',
     '',
-    '"dimensions" is an array. Each element has exactly:',
+    '"fields" is an array. Include ONE value_column entry plus one entry per dimension:',
     '{',
-    '  "field_name": "exact dimension column name from input",',
-    '  "display_name": "clean human-readable name",',
-    '  "definition": "one-line business definition",',
-    '  "sample_values": "comma-separated sample values",',
-    '  "mandatory_filter_value": "(LEAVE EMPTY — user fills this in manually)",',
-    '  "review_notes": "(suggest if user should likely set a mandatory filter, e.g. statement_type)"',
+    '  "field_name": "exact column name",',
+    '  "type": "value_column | dimension",',
+    '  "display_name": "clean name",',
+    '  "data_type": "Float | Integer | String",',
+    '  "aggregation": "SUM | AVG | COUNT | (blank for dimensions)",',
+    '  "unit": "USD | % | (blank if n/a)",',
+    '  "definition": "one-line definition",',
+    '  "sample_values": "comma-separated samples",',
+    '  "mandatory_filter_value": "(LEAVE BLANK — user fills)",',
+    '  "review_notes": "(suggest mandatory filter if likely, else blank)"',
     '}',
     '',
-    '## RULES',
-    '1. Every input node and dimension must appear in output exactly once.',
-    '2. node_path / field_name must match input exactly.',
-    '3. L1 nodes: ALWAYS set favorable_direction, business_priority, unit.',
-    '4. L2/L3+ nodes: leave favorable_direction empty UNLESS it differs from parent.',
-    '5. ALWAYS leave mandatory_filter_value empty for dimensions — the user fills it.',
-    '6. If a dimension looks like it should have a mandatory filter (e.g. mixing Balance Sheet + P&L, mixing Actual + Plan + Forecast, multiple forecast versions), add a review_note suggesting it.',
-    '7. If an L1 direction is genuinely ambiguous (e.g. Liabilities), leave favorable_direction empty and add a review_note.',
-    '8. Return ONLY {"nodes": [...], "dimensions": [...]}. No markdown. No preamble.',
+    '## CRITICAL',
+    '- Every input node must appear exactly once in "nodes".',
+    '- Every input dimension plus the value column must appear exactly once in "fields".',
+    '- node_path / field_name must match input exactly.',
+    '- mandatory_filter_value is ALWAYS blank in output. Never fill it.',
+    '- Return ONLY {"nodes": [...], "fields": [...]}. No markdown. No preamble.',
   ].join('\n')
 
   var response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -286,7 +313,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
       model: 'gpt-4o', max_tokens: 8000, temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are a senior finance/BI analyst. Generate precise hierarchy metadata. Return valid JSON only.' },
+        { role: 'system', content: 'You are a senior finance/BI analyst. Generate precise hierarchical metadata with inheritance. Return valid JSON only.' },
         { role: 'user',   content: prompt },
       ],
     }),
@@ -301,17 +328,17 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
   try { parsed = JSON.parse(content.replace(/```json|```/g, '').trim()) }
   catch(e) { return Response.json({ error: 'Could not parse LLM response.' }, { status: 500 }) }
 
-  var llmNodes      = parsed.nodes      || []
-  var llmDimensions = parsed.dimensions || []
-  if (!Array.isArray(llmNodes))      return Response.json({ error: 'Expected "nodes" array from LLM.' }, { status: 500 })
-  if (!Array.isArray(llmDimensions)) llmDimensions = []
+  var llmNodes  = parsed.nodes  || []
+  var llmFields = parsed.fields || []
+  if (!Array.isArray(llmNodes))  return Response.json({ error: 'Expected "nodes" array from LLM.' }, { status: 500 })
+  if (!Array.isArray(llmFields)) llmFields = []
 
   var llmNodesByPath = {}
   llmNodes.forEach(function(n) { if (n.node_path) llmNodesByPath[n.node_path] = n })
-  var llmDimsByName = {}
-  llmDimensions.forEach(function(d) { if (d.field_name) llmDimsByName[d.field_name] = d })
+  var llmFieldsByName = {}
+  llmFields.forEach(function(f) { if (f.field_name) llmFieldsByName[f.field_name] = f })
 
-  // ── Step 5: Merge structural nodes with LLM enrichment ──────────────────
+  // ── Step 5: Merge hierarchy ─────────────────────────────────────────────
   var hierarchyRows = allNodes.map(function(n) {
     var enrich = llmNodesByPath[n.node_path] || {}
     return {
@@ -327,28 +354,48 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     }
   })
 
-  var dimensionRows = dimSummary.map(function(d) {
-    var enrich = llmDimsByName[d.field_name] || {}
-    return {
+  // ── Step 6: Merge fields (value column + dimensions) ────────────────────
+  var fieldRows = []
+
+  // Value column row — always first
+  var valueEnrich = llmFieldsByName[valueCol] || {}
+  fieldRows.push({
+    field_name:             valueCol,
+    type:                   'value_column',
+    display_name:           valueEnrich.display_name || valueCol,
+    data_type:              valueEnrich.data_type    || 'Float',
+    aggregation:            valueEnrich.aggregation  || 'SUM',
+    unit:                   valueEnrich.unit         || '',
+    definition:             valueEnrich.definition   || 'The numeric value column storing all metric values',
+    sample_values:          (valueSamples || []).slice(0, 5).map(String).join(', '),
+    mandatory_filter_value: '',
+    review_notes:           valueEnrich.review_notes || '',
+  })
+
+  // Dimension rows
+  dimSummary.forEach(function(d) {
+    var enrich = llmFieldsByName[d.field_name] || {}
+    fieldRows.push({
       field_name:             d.field_name,
-      display_name:           enrich.display_name           || d.field_name,
-      definition:             enrich.definition             || '',
-      sample_values:          enrich.sample_values          || d.sample_values.join(', '),
-      mandatory_filter_value: '',  // ALWAYS blank — user fills in
-      review_notes:           enrich.review_notes           || '',
-    }
+      type:                   'dimension',
+      display_name:           enrich.display_name || d.field_name,
+      data_type:              enrich.data_type    || 'String',
+      aggregation:            '',
+      unit:                   enrich.unit         || '',
+      definition:             enrich.definition   || '',
+      sample_values:          enrich.sample_values || d.sample_values.join(', '),
+      mandatory_filter_value: '',
+      review_notes:           enrich.review_notes || '',
+    })
   })
 
   var flaggedCount = hierarchyRows.filter(function(r) { return r.review_notes && String(r.review_notes).trim() }).length +
-                     dimensionRows.filter(function(r) { return r.review_notes && String(r.review_notes).trim() }).length
+                     fieldRows.filter(function(r)     { return r.review_notes && String(r.review_notes).trim() }).length
 
-  // ── Step 6: Build Excel with two sheets + tree view ─────────────────────
+  // ── Step 7: Build Excel — two sheets ────────────────────────────────────
   var wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hierarchyRows), 'Hierarchy Metadata')
-  if (dimensionRows.length) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dimensionRows), 'Dimensions')
-  }
-
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fieldRows),     'Fields')
 
   var buf      = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   var base64   = Buffer.from(buf).toString('base64')
@@ -356,7 +403,7 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
 
   return Response.json({
     base64, filename,
-    fieldCount: hierarchyRows.length + dimensionRows.length,
+    fieldCount: hierarchyRows.length + fieldRows.length,
     flaggedCount,
     format: 'long_hierarchical',
   })
