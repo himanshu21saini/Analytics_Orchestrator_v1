@@ -440,7 +440,7 @@ export default function SetupScreen({ onReady }) {
     var savedDatasetId = String(dataset.id)
     await loadLists()
     setSelDataset(savedDatasetId)
-    setDataMode('existing')
+    setDataMode('existing') 
     setDataFile(null)
     setDataName('')
   } catch(err) { setError('Dataset save failed: ' + err.message) }
