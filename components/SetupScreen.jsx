@@ -441,32 +441,12 @@ export default function SetupScreen({ onReady }) {
     await loadLists()
     setSelDataset(savedDatasetId)
     setDataMode('existing')
-
-    // Fetch the dataset_format we just stored to decide whether to show modal
-    var fmtRes = await fetch('/api/datasets')
-    var fmtJson = await fmtRes.json()
-    var savedDs = (fmtJson.datasets || []).find(function(d) { return String(d.id) === savedDatasetId })
-    var detected = savedDs && savedDs.dataset_format
-    if (typeof detected === 'string') { try { detected = JSON.parse(detected) } catch(e) { detected = null } }
-
-    if (detected && detected.format === 'long_hierarchical') {
-      // Get column list from column_map for the modal
-      var colMap = savedDs.column_map
-      if (typeof colMap === 'string') { try { colMap = JSON.parse(colMap) } catch(e) { colMap = {} } }
-      var allCols = Object.values(colMap || {})
-      setFormatModal({
-        datasetId: savedDatasetId,
-        datasetName: dataset.name,
-        allColumns: allCols,
-        detectedFormat: detected,
-      })
-    }
-
     setDataFile(null)
     setDataName('')
   } catch(err) { setError('Dataset save failed: ' + err.message) }
   setSavingData(false); setProgress('')
 }
+  
   async function handleSaveMetadata() {
     if (!metaFile) return
     setSavingMeta(true); setError('')
@@ -532,23 +512,59 @@ export default function SetupScreen({ onReady }) {
   }
 
   async function handleAutoGenMeta() {
-    var dsId = dataMode === 'existing' ? selDataset : null
-    if (!dsId) { setError('Select a dataset first.'); return }
-    setAutoGenState('loading'); setAutoGenResult(null)
-    try {
-      var res  = await fetch('/api/generate-metadata', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: dsId }) })
-      var json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Generation failed.')
-      var bytes = Uint8Array.from(atob(json.base64), function(c) { return c.charCodeAt(0) })
-      var blob  = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      var url   = URL.createObjectURL(blob)
-      var link  = document.createElement('a')
-      link.href = url; link.download = json.filename
-      document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url)
-      setAutoGenResult({ fieldCount: json.fieldCount, flaggedCount: json.flaggedCount, filename: json.filename })
-      setAutoGenState('done')
-    } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
-  }
+  var dsId = dataMode === 'existing' ? selDataset : null
+  if (!dsId) { setError('Select a dataset first.'); return }
+  setAutoGenState('loading'); setAutoGenResult(null); setError('')
+  try {
+    // Step 1: Run format detection on the dataset
+    var detRes = await fetch('/api/detect-format', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datasetId: dsId }),
+    })
+    var detJson = await detRes.json()
+    if (!detRes.ok) throw new Error(detJson.error || 'Format detection failed')
+
+    // Step 2: If long format, open modal and wait for user confirmation
+    if (detJson.detectedFormat && detJson.detectedFormat.format === 'long_hierarchical') {
+      var dsName = ''
+      var ds = datasets.find(function(d) { return String(d.id) === String(dsId) })
+      if (ds) dsName = ds.name
+      setAutoGenState('idle')  // pause loading state while modal is open
+      setFormatModal({
+        datasetId:      String(dsId),
+        datasetName:    dsName,
+        allColumns:     detJson.allColumns,
+        detectedFormat: detJson.detectedFormat,
+        // When user confirms, resume generation automatically
+        onConfirmNext:  function() { runGenerateMetadata(dsId) },
+      })
+      return
+    }
+
+    // Step 3: Wide format — proceed directly
+    await runGenerateMetadata(dsId)
+  } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
+}
+
+async function runGenerateMetadata(dsId) {
+  setAutoGenState('loading')
+  try {
+    var res  = await fetch('/api/generate-metadata', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datasetId: dsId }),
+    })
+    var json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Generation failed.')
+    var bytes = Uint8Array.from(atob(json.base64), function(c) { return c.charCodeAt(0) })
+    var blob  = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    var url   = URL.createObjectURL(blob)
+    var link  = document.createElement('a')
+    link.href = url; link.download = json.filename
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url)
+    setAutoGenResult({ fieldCount: json.fieldCount, flaggedCount: json.flaggedCount, filename: json.filename })
+    setAutoGenState('done')
+  } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
+}
 
   async function handleAskOnly() {
     setError('')
@@ -715,8 +731,12 @@ export default function SetupScreen({ onReady }) {
             datasetName={formatModal.datasetName}
             allColumns={formatModal.allColumns}
             detectedFormat={formatModal.detectedFormat}
-            onClose={function() { setFormatModal(null) }}
-            onConfirm={function() { setFormatModal(null) }}
+            onClose={function() { setFormatModal(null); setAutoGenState('idle') }}
+            onConfirm={function() {
+              var next = formatModal.onConfirmNext
+              setFormatModal(null)
+              if (next) next()
+            }}
           />
         )}
         <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 28 }}>
