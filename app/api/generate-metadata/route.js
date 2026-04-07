@@ -349,14 +349,6 @@ async function generateLongFormatMetadata(tbl, datasetFormat, apiKey) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dimensionRows), 'Dimensions')
   }
 
-  var treeView = hierarchyRows.map(function(r) {
-    return {
-      indent_view: '  '.repeat(r.level - 1) + r.display_name,
-      node_path:   r.node_path,
-      level:       r.level,
-    }
-  })
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(treeView), 'Tree View')
 
   var buf      = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   var base64   = Buffer.from(buf).toString('base64')
