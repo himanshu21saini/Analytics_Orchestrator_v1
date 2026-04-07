@@ -12,100 +12,7 @@ function sanitizeColName(name) {
     .replace(/^_+|_+$/g, '') || 'col'
 }
 
-// ── Long-format hierarchical detection ───────────────────────────────────────
-// Returns { format, valueColumn, hierarchyColumns, dimensionColumns, confidence }
-function detectDatasetFormat(sampleRows, cols) {
-  var format = {
-    format: 'wide',
-    valueColumn: null,
-    hierarchyColumns: [],
-    dimensionColumns: [],
-    confidence: 'high',
-  }
-  if (!sampleRows.length || cols.length < 4) return format
 
-  // Numeric vs text columns (using already-inferred types)
-  var numericCols = cols.filter(function(c) { return c.type === 'NUMERIC' })
-  var textCols    = cols.filter(function(c) { return c.type === 'TEXT' })
-
-  // Among numeric columns, find ones that look like an actual VALUE column.
-  // Real value columns have high cardinality — time/year/month/sort/version
-  // columns are numeric but only have a handful of distinct values.
-  var totalRows = sampleRows.length
-  var valueCandidates = numericCols.filter(function(c) {
-    var unique = {}
-    sampleRows.forEach(function(r) {
-      var v = r[c.raw]
-      if (v !== null && v !== undefined && String(v).trim() !== '') unique[String(v)] = true
-    })
-    var uniqueCount = Object.keys(unique).length
-    return uniqueCount > Math.max(10, totalRows * 0.3)
-  })
-
-  // Long format signature: exactly 1 high-cardinality numeric col + 3+ text cols
-  if (valueCandidates.length !== 1 || textCols.length < 3) return format
-
-  // Check cardinality of text columns — long format has heavy value repetition
-  // because hierarchy values repeat thousands of times across periods
-  var totalRows = sampleRows.length
-  var lowCardinalityCols = []
-  var dateLikeCols       = []
-
-  textCols.forEach(function(c) {
-    var unique = {}
-    sampleRows.forEach(function(r) {
-      var v = r[c.raw]
-      if (v !== null && v !== undefined && String(v).trim() !== '') {
-        unique[String(v)] = true
-      }
-    })
-    var uniqueCount = Object.keys(unique).length
-    var cardinalityRatio = uniqueCount / totalRows
-
-    // Heuristic: column has heavy repetition if unique values < 50% of rows
-    // AND total unique values is small (< 30 in sample)
-    if (cardinalityRatio < 0.5 && uniqueCount < 30) {
-      lowCardinalityCols.push(c)
-    }
-
-    // Detect date-like text columns (e.g. "01/31/2022") — these are likely time
-    var firstVal = sampleRows.find(function(r) { return r[c.raw] })
-    if (firstVal && /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$|^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(String(firstVal[c.raw]))) {
-      dateLikeCols.push(c)
-    }
-  })
-
-  // Need at least 3 low-cardinality text columns for hierarchical long format
-  if (lowCardinalityCols.length < 3) return format
-
-  
-  // Looks like long hierarchical format
-  format.format = 'long_hierarchical'
-  format.valueColumn = valueCandidates[0].sanitized
-
-  // Hierarchy columns = low-cardinality text cols, ordered by ascending cardinality
-  // (L1 has fewest values, L3 has most). Exclude date-like cols.
-  var hierarchyCandidates = lowCardinalityCols
-    .filter(function(c) { return dateLikeCols.indexOf(c) === -1 })
-    .map(function(c) {
-      var unique = {}
-      sampleRows.forEach(function(r) { if (r[c.raw]) unique[r[c.raw]] = true })
-      return { col: c, uniqueCount: Object.keys(unique).length }
-    })
-    .sort(function(a, b) { return a.uniqueCount - b.uniqueCount })
-
-  format.hierarchyColumns  = hierarchyCandidates.map(function(h) { return h.col.sanitized })
-  format.dimensionColumns  = textCols
-    .filter(function(c) {
-      return format.hierarchyColumns.indexOf(c.sanitized) === -1
-    })
-    .map(function(c) { return c.sanitized })
-
-  // Confidence is medium if we have unusual column counts
-  if (textCols.length > 6 || lowCardinalityCols.length > 5) format.confidence = 'medium'
-
-  return format
-}
 // ── Type inference from sample values ────────────────────────────────────────
 function inferColType(sampleValues) {
   var nonNull = sampleValues.filter(function(v) {
@@ -194,11 +101,6 @@ export async function POST(request) {
       await execute('CREATE TABLE ds_' + datasetId + ' (' + colDefs + ')', [])
 
       
-     // Save column map and detected format to datasets record
-      await execute(
-        'UPDATE datasets SET column_map = $1, dataset_format = $2 WHERE id = $3',
-        [JSON.stringify(colMap), JSON.stringify(detectedFormat), datasetId]
-      )
       console.log('=== upload-dataset init: dataset', datasetId, 'table ds_' + datasetId, 'cols:', cols.length)
       return Response.json({ datasetId: datasetId, columns: cols, colMap: colMap })
     }
