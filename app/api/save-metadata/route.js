@@ -274,11 +274,10 @@ async function saveLongFormat(wb, metaName) {
     var fieldName = getVal(fr, 'field_name')
     if (!fieldName) continue
 
-    var type = String(getVal(fr, 'type') || '').toLowerCase().trim()
-    // Accept 'value_column' | 'dimension' (normalise 'value' → 'value_column')
+var type = String(getVal(fr, 'type') || '').toLowerCase().trim()
+    // Accept 'value_column' | 'dimension' | 'year_month' (normalise 'value' → 'value_column')
     if (type === 'value') type = 'value_column'
-    if (type !== 'value_column' && type !== 'dimension') {
-      // Default unknown types to dimension so we don't lose the row
+    if (type !== 'value_column' && type !== 'dimension' && type !== 'year_month') {
       type = 'dimension'
     }
 
