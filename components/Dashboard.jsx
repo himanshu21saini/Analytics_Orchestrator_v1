@@ -709,10 +709,24 @@ if (ct === 'waterfall') {
 
       {(trendResults.length > 0 || chartResults.length > 0) && <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />}
 
-      {prefs.forecast !== false && (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
-        <TrendExplorer metadata={metadata} datasetId={session.datasetId} timePeriod={session.timePeriod} onSimulate={function(q) { setWhatifQuery(q) }} onTrendData={handleTrendData} />
-      )}
-
+      {prefs.forecast !== false && (
+  (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' })
+  || (datasetFormat === 'long_hierarchical' && (session.hierarchyNodes || []).length > 0)
+) && (
+    <TrendExplorer
+  metadata={metadata}
+  datasetId={session.datasetId}
+  timePeriod={session.timePeriod}
+  datasetFormat={datasetFormat}
+  metadataSetId={session.metadataSetId}
+  hierarchyNodes={session.hierarchyNodes}
+  mandatoryFilters={mandatoryFilters}
+  dimensionFilters={[]}
+  onSimulate={function(q) { setWhatifQuery(q) }}
+  onTrendData={handleTrendData}
+/>  
+    )}
+    
       {drillResults.map(function(result, idx) { return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} /> })}
 
       {chartResults.length > 0 && (
