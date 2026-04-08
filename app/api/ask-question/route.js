@@ -405,7 +405,7 @@ async function handleLongAskFlow(dsFmt) {
     '    FROM ' + tbl + ' WHERE <period>' + CF + ' GROUP BY ' + yf + ', ' + mf + ' ORDER BY period',
     '    Use label_key="period" and leave value_key empty. Chart auto-renders one line per non-label column.',
     '14. IMPORTANT: do NOT use this pattern for dimensions that appear in the MANDATORY FILTERS list — those values are locked and other values will return zero.',
-
+ 
   ].join('\n')
 
   var twoPassTypeLong = getTwoPassType(question)
