@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
 // Number formatting that preserves sign as stored in data
 function fmt(v) {
@@ -20,7 +20,6 @@ function fmtDelta(cur, cmp, favDir) {
   }
   var pct = ((cur - cmp) / Math.abs(cmp)) * 100
   var isPositive = pct >= 0
-  // Color by favorability — i means up=good, d means down=good
   var isFavorable = favDir === 'd' ? !isPositive : isPositive
   var color = isFavorable ? '#10C48A' : '#E05555'
   return {
@@ -30,9 +29,11 @@ function fmtDelta(cur, cmp, favDir) {
 }
 
 export default function StatementTable({ session }) {
-  var [values,    setValues]    = useState({})  // { node_path: { current_value, comparison_value, ... } }
-  var [loading,   setLoading]   = useState(true)
-  var [error,     setError]     = useState('')
+  var [values,        setValues]        = useState({})   // keyed by node_path
+  var [loadingPaths,  setLoadingPaths]  = useState({})   // which paths are currently fetching
+  var [expandedPaths, setExpandedPaths] = useState({})   // which paths are currently expanded
+  var [initialLoading, setInitialLoading] = useState(true)
+  var [error,         setError]         = useState('')
 
   var hierarchyNodes   = session.hierarchyNodes   || []
   var datasetId        = session.datasetId
@@ -41,39 +42,112 @@ export default function StatementTable({ session }) {
   var mandatoryFilters = session.mandatoryFilters || []
   var periodInfo       = session.periodInfo || {}
 
-  // L1 nodes only for Stage 1
-  var l1Nodes = hierarchyNodes.filter(function(n) { return n.level === 1 })
-
-  useEffect(function() {
-    if (!l1Nodes.length || !datasetId || !metadataSetId) { setLoading(false); return }
-    setLoading(true); setError('')
-    fetch('/api/statement-values', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        datasetId:        datasetId,
-        metadataSetId:    metadataSetId,
-        nodePaths:        l1Nodes.map(function(n) { return n.node_path }),
-        timePeriod:       timePeriod,
-        mandatoryFilters: mandatoryFilters,
-        dimensionFilters: [],
-      }),
+  // ── Build parent → children index once ────────────────────────────────
+  var childrenByParent = useMemo(function() {
+    var map = {}
+    hierarchyNodes.forEach(function(n) {
+      var parent = n.parent_path || '__ROOT__'
+      if (!map[parent]) map[parent] = []
+      map[parent].push(n)
     })
-      .then(function(r) { return r.json() })
-      .then(function(j) {
-        if (j.error) throw new Error(j.error)
-        setValues(j.values || {})
-        setLoading(false)
+    // Sort children alphabetically within each parent
+    Object.keys(map).forEach(function(k) {
+      map[k].sort(function(a, b) { return (a.display_name || a.node_name).localeCompare(b.display_name || b.node_name) })
+    })
+    return map
+  }, [hierarchyNodes])
+
+  function hasChildren(nodePath) {
+    return !!(childrenByParent[nodePath] && childrenByParent[nodePath].length)
+  }
+
+  // ── Fetch values for a list of paths ──────────────────────────────────
+  async function fetchValues(pathsToFetch) {
+    if (!pathsToFetch.length) return
+    // Mark all as loading
+    setLoadingPaths(function(prev) {
+      var next = Object.assign({}, prev)
+      pathsToFetch.forEach(function(p) { next[p] = true })
+      return next
+    })
+    try {
+      var res = await fetch('/api/statement-values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          datasetId:        datasetId,
+          metadataSetId:    metadataSetId,
+          nodePaths:        pathsToFetch,
+          timePeriod:       timePeriod,
+          mandatoryFilters: mandatoryFilters,
+          dimensionFilters: [],
+        }),
       })
-      .catch(function(err) {
-        setError(err.message)
-        setLoading(false)
+      var json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setValues(function(prev) {
+        var next = Object.assign({}, prev)
+        Object.keys(json.values || {}).forEach(function(k) { next[k] = json.values[k] })
+        return next
       })
+    } catch(err) {
+      setError(err.message)
+    }
+    // Clear loading flags
+    setLoadingPaths(function(prev) {
+      var next = Object.assign({}, prev)
+      pathsToFetch.forEach(function(p) { delete next[p] })
+      return next
+    })
+  }
+
+  // ── Initial load: fetch all L1 values ─────────────────────────────────
+  useEffect(function() {
+    var l1Nodes = hierarchyNodes.filter(function(n) { return n.level === 1 })
+    if (!l1Nodes.length || !datasetId || !metadataSetId) {
+      setInitialLoading(false)
+      return
+    }
+    setInitialLoading(true); setError('')
+    fetchValues(l1Nodes.map(function(n) { return n.node_path }))
+      .finally(function() { setInitialLoading(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId, metadataSetId])
 
-  if (!hierarchyNodes.length) {
-    return null
+  // ── Expand/collapse a node ────────────────────────────────────────────
+  async function toggleExpand(nodePath) {
+    var isExpanded = !!expandedPaths[nodePath]
+    if (isExpanded) {
+      // Collapse
+      setExpandedPaths(function(prev) { var n = Object.assign({}, prev); delete n[nodePath]; return n })
+      return
+    }
+    // Expand
+    setExpandedPaths(function(prev) { var n = Object.assign({}, prev); n[nodePath] = true; return n })
+
+    // Fetch children's values if we don't already have them cached
+    var children = childrenByParent[nodePath] || []
+    var missing = children
+      .map(function(c) { return c.node_path })
+      .filter(function(p) { return !values[p] })
+    if (missing.length) await fetchValues(missing)
   }
+
+  // ── Build the flat list of visible rows (top-down traversal) ──────────
+  var visibleRows = useMemo(function() {
+    var out = []
+    function walk(parent) {
+      var kids = childrenByParent[parent] || []
+      kids.forEach(function(node) {
+        out.push(node)
+        if (expandedPaths[node.node_path]) walk(node.node_path)
+      })
+    }
+    walk('__ROOT__')
+    return out
+  }, [hierarchyNodes, expandedPaths, childrenByParent])
+
+  if (!hierarchyNodes.length) return null
 
   return (
     <div style={{
@@ -90,9 +164,9 @@ export default function StatementTable({ session }) {
           Statement View
         </p>
         <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, background: 'var(--accent-dim)', color: 'var(--text-accent)', border: '1px solid var(--accent-border)', fontFamily: 'var(--font-mono)' }}>
-          {l1Nodes.length} top-level lines
+          {hierarchyNodes.filter(function(n) { return n.level === 1 }).length} top-level lines
         </span>
-        {loading && (
+        {initialLoading && (
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span className="spinner" /> loading values...
           </span>
@@ -106,7 +180,7 @@ export default function StatementTable({ session }) {
       )}
 
       {/* Table */}
-      {!loading && !error && l1Nodes.length > 0 && (
+      {!initialLoading && !error && visibleRows.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontFamily: 'var(--font-body)' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -117,25 +191,61 @@ export default function StatementTable({ session }) {
             </tr>
           </thead>
           <tbody>
-            {l1Nodes.map(function(node) {
+            {visibleRows.map(function(node) {
               var v = values[node.node_path] || {}
               var cur = v.current_value
               var cmp = v.comparison_value
               var favDir = v.favorable_direction || node.favorable_direction
               var delta = fmtDelta(cur, cmp, favDir)
+              var indent = (node.level - 1) * 18
+              var expanded = !!expandedPaths[node.node_path]
+              var loading  = !!loadingPaths[node.node_path]
+              var canExpand = hasChildren(node.node_path)
+              var isL1 = node.level === 1
+              var rowWeight = isL1 ? 600 : 400
+
               return (
-                <tr key={node.node_path} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <td style={{ padding: '10px', color: 'var(--text-primary)', fontFamily: 'var(--font-body)' }}>
-                    {node.display_name || node.node_name}
+                <tr key={node.node_path}
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                      background: isL1 ? 'rgba(0,200,240,0.02)' : 'transparent',
+                    }}>
+                  <td style={{ padding: '8px 10px', color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontWeight: rowWeight }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: indent }}>
+                      {canExpand ? (
+                        <button
+                          onClick={function() { toggleExpand(node.node_path) }}
+                          disabled={loading}
+                          style={{
+                            width: 16, height: 16, padding: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'transparent', border: 'none',
+                            color: 'var(--text-accent)',
+                            cursor: loading ? 'wait' : 'pointer',
+                            fontSize: 10,
+                            fontFamily: 'var(--font-mono)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {loading
+                            ? <span className="spinner" style={{ width: 9, height: 9, borderWidth: 1 }} />
+                            : <span style={{ display: 'inline-block', transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}>▸</span>
+                          }
+                        </button>
+                      ) : (
+                        <span style={{ width: 16, flexShrink: 0, textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 8 }}>·</span>
+                      )}
+                      <span>{node.display_name || node.node_name}</span>
+                    </div>
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>
-                    {fmt(cur)}{node.unit ? ' ' + node.unit : ''}
+                  <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', fontWeight: rowWeight }}>
+                    {loading ? '…' : fmt(cur)}{cur !== null && cur !== undefined && node.unit ? ' ' + node.unit : ''}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                    {fmt(cmp)}{node.unit ? ' ' + node.unit : ''}
+                  <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                    {loading ? '…' : fmt(cmp)}{cmp !== null && cmp !== undefined && node.unit ? ' ' + node.unit : ''}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: delta.color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {delta.text}
+                  <td style={{ padding: '8px 10px', textAlign: 'right', color: delta.color, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {loading ? '' : delta.text}
                   </td>
                 </tr>
               )
