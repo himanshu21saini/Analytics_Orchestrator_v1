@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 
 // Number formatting that preserves sign as stored in data
 function fmt(v) {
@@ -29,11 +29,18 @@ function fmtDelta(cur, cmp, favDir) {
 }
 
 export default function StatementTable({ session }) {
-  var [values,        setValues]        = useState({})   // keyed by node_path
-  var [loadingPaths,  setLoadingPaths]  = useState({})   // which paths are currently fetching
-  var [expandedPaths, setExpandedPaths] = useState({})   // which paths are currently expanded
+  var [values,         setValues]         = useState({})   // keyed by node_path
+  var [loadingPaths,   setLoadingPaths]   = useState({})   // which paths are currently fetching
+  var [expandedPaths,  setExpandedPaths]  = useState({})   // which paths are currently expanded
   var [initialLoading, setInitialLoading] = useState(true)
-  var [error,         setError]         = useState('')
+  var [error,          setError]          = useState('')
+
+  // ── Stage 3: dimension filter state ──────────────────────────────────
+  var [dimensions,      setDimensions]      = useState([])     // [{field_name, display_name?}, ...]
+  var [dimValues,       setDimValues]       = useState({})     // { fieldName: ['v1','v2',...] }
+  var [loadingDimVals,  setLoadingDimVals]  = useState({})     // { fieldName: true }
+  var [selectedFilters, setSelectedFilters] = useState({})     // { fieldName: ['v1','v2'] }
+  var [openDropdown,    setOpenDropdown]    = useState(null)   // currently open dropdown field name
 
   var hierarchyNodes   = session.hierarchyNodes   || []
   var datasetId        = session.datasetId
@@ -50,7 +57,6 @@ export default function StatementTable({ session }) {
       if (!map[parent]) map[parent] = []
       map[parent].push(n)
     })
-    // Sort children alphabetically within each parent
     Object.keys(map).forEach(function(k) {
       map[k].sort(function(a, b) { return (a.display_name || a.node_name).localeCompare(b.display_name || b.node_name) })
     })
@@ -61,10 +67,19 @@ export default function StatementTable({ session }) {
     return !!(childrenByParent[nodePath] && childrenByParent[nodePath].length)
   }
 
-  // ── Fetch values for a list of paths ──────────────────────────────────
-  async function fetchValues(pathsToFetch) {
+  // ── Convert selectedFilters state → backend payload shape ────────────
+  function buildDimensionFilterPayload(sel) {
+    var out = []
+    Object.keys(sel).forEach(function(field) {
+      var vals = sel[field]
+      if (vals && vals.length) out.push({ field: field, values: vals })
+    })
+    return out
+  }
+
+  // ── Fetch values for a list of paths, using a given filter snapshot ──
+  async function fetchValues(pathsToFetch, filterSnapshot) {
     if (!pathsToFetch.length) return
-    // Mark all as loading
     setLoadingPaths(function(prev) {
       var next = Object.assign({}, prev)
       pathsToFetch.forEach(function(p) { next[p] = true })
@@ -80,7 +95,7 @@ export default function StatementTable({ session }) {
           nodePaths:        pathsToFetch,
           timePeriod:       timePeriod,
           mandatoryFilters: mandatoryFilters,
-          dimensionFilters: [],
+          dimensionFilters: buildDimensionFilterPayload(filterSnapshot || selectedFilters),
         }),
       })
       var json = await res.json()
@@ -93,7 +108,6 @@ export default function StatementTable({ session }) {
     } catch(err) {
       setError(err.message)
     }
-    // Clear loading flags
     setLoadingPaths(function(prev) {
       var next = Object.assign({}, prev)
       pathsToFetch.forEach(function(p) { delete next[p] })
@@ -101,7 +115,20 @@ export default function StatementTable({ session }) {
     })
   }
 
-  // ── Initial load: fetch all L1 values ─────────────────────────────────
+  // ── Load dimensions list once ─────────────────────────────────────────
+  useEffect(function() {
+    if (!metadataSetId) return
+    fetch('/api/metadata-fields?metadataSetId=' + metadataSetId)
+      .then(function(r) { return r.json() })
+      .then(function(json) {
+        var fields = json.fields || []
+        var dims = fields.filter(function(f) { return f.type === 'dimension' })
+        setDimensions(dims)
+      })
+      .catch(function(err) { console.error('metadata-fields fetch failed:', err.message) })
+  }, [metadataSetId])
+
+  // ── Initial L1 load ───────────────────────────────────────────────────
   useEffect(function() {
     var l1Nodes = hierarchyNodes.filter(function(n) { return n.level === 1 })
     if (!l1Nodes.length || !datasetId || !metadataSetId) {
@@ -109,28 +136,92 @@ export default function StatementTable({ session }) {
       return
     }
     setInitialLoading(true); setError('')
-    fetchValues(l1Nodes.map(function(n) { return n.node_path }))
+    fetchValues(l1Nodes.map(function(n) { return n.node_path }), {})
       .finally(function() { setInitialLoading(false) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId, metadataSetId])
+
+  // ── Lazy-load distinct values for a dimension when dropdown opens ────
+  async function loadDimValues(field) {
+    if (dimValues[field] || loadingDimVals[field]) return
+    setLoadingDimVals(function(prev) { var n = Object.assign({}, prev); n[field] = true; return n })
+    try {
+      var res = await fetch('/api/distinct-values?datasetId=' + datasetId + '&field=' + encodeURIComponent(field))
+      var json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setDimValues(function(prev) { var n = Object.assign({}, prev); n[field] = json.values || []; return n })
+    } catch(err) {
+      console.error('distinct-values error for', field, ':', err.message)
+    }
+    setLoadingDimVals(function(prev) { var n = Object.assign({}, prev); delete n[field]; return n })
+  }
+
+  // ── Toggle dropdown open/close ───────────────────────────────────────
+  function toggleDropdown(field) {
+    if (openDropdown === field) { setOpenDropdown(null); return }
+    setOpenDropdown(field)
+    loadDimValues(field)
+  }
+
+  // Close dropdown on outside click
+  var rootRef = useRef(null)
+  useEffect(function() {
+    function onDocClick(e) {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpenDropdown(null)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return function() { document.removeEventListener('mousedown', onDocClick) }
+  }, [])
+
+  // ── Apply a new filter state: optimistic collapse + refetch L1 ───────
+  function applyFilters(nextFilters) {
+    setSelectedFilters(nextFilters)
+    setExpandedPaths({})      // collapse everything
+    setValues({})             // drop cache
+    setError('')
+    var l1 = hierarchyNodes.filter(function(n) { return n.level === 1 }).map(function(n) { return n.node_path })
+    if (l1.length) {
+      setInitialLoading(true)
+      fetchValues(l1, nextFilters).finally(function() { setInitialLoading(false) })
+    }
+  }
+
+  function toggleFilterValue(field, value) {
+    var current = selectedFilters[field] || []
+    var next
+    if (current.indexOf(value) !== -1) {
+      next = current.filter(function(v) { return v !== value })
+    } else {
+      next = current.concat([value])
+    }
+    var nextFilters = Object.assign({}, selectedFilters)
+    if (next.length) nextFilters[field] = next
+    else delete nextFilters[field]
+    applyFilters(nextFilters)
+  }
+
+  function clearAllFilters() {
+    applyFilters({})
+  }
+
+  var activeFilterCount = Object.keys(selectedFilters).reduce(function(acc, k) {
+    return acc + ((selectedFilters[k] && selectedFilters[k].length) ? 1 : 0)
+  }, 0)
 
   // ── Expand/collapse a node ────────────────────────────────────────────
   async function toggleExpand(nodePath) {
     var isExpanded = !!expandedPaths[nodePath]
     if (isExpanded) {
-      // Collapse
       setExpandedPaths(function(prev) { var n = Object.assign({}, prev); delete n[nodePath]; return n })
       return
     }
-    // Expand
     setExpandedPaths(function(prev) { var n = Object.assign({}, prev); n[nodePath] = true; return n })
 
-    // Fetch children's values if we don't already have them cached
     var children = childrenByParent[nodePath] || []
     var missing = children
       .map(function(c) { return c.node_path })
       .filter(function(p) { return !values[p] })
-    if (missing.length) await fetchValues(missing)
+    if (missing.length) await fetchValues(missing, selectedFilters)
   }
 
   // ── Build the flat list of visible rows (top-down traversal) ──────────
@@ -150,11 +241,11 @@ export default function StatementTable({ session }) {
   if (!hierarchyNodes.length) return null
 
   return (
-    <div style={{
+    <div ref={rootRef} style={{
       background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
       border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
       padding: '20px 24px 16px', marginBottom: 20,
-      position: 'relative', overflow: 'hidden', backdropFilter: 'blur(8px)',
+      position: 'relative', overflow: 'visible', backdropFilter: 'blur(8px)',
     }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.6 }} />
 
@@ -172,6 +263,107 @@ export default function StatementTable({ session }) {
           </span>
         )}
       </div>
+
+      {/* ── Filter bar ───────────────────────────────────────────────── */}
+      {dimensions.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+            Filters
+          </span>
+          {dimensions.map(function(dim) {
+            var field = dim.field_name
+            var label = dim.display_name || field
+            var selected = selectedFilters[field] || []
+            var isOpen = openDropdown === field
+            var vals = dimValues[field] || []
+            var isLoadingVals = !!loadingDimVals[field]
+            var badgeText = selected.length
+              ? (selected.length === 1 ? selected[0] : selected.length + ' selected')
+              : 'All'
+
+            return (
+              <div key={field} style={{ position: 'relative' }}>
+                <button
+                  onClick={function() { toggleDropdown(field) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '5px 10px',
+                    background: selected.length ? 'var(--accent-dim)' : 'var(--surface-2)',
+                    border: '1px solid ' + (selected.length ? 'var(--accent-border)' : 'var(--border)'),
+                    borderRadius: 4,
+                    color: selected.length ? 'var(--text-accent)' : 'var(--text-secondary)',
+                    fontSize: 10,
+                    fontFamily: 'var(--font-body)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{label}:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{badgeText}</span>
+                  <span style={{ fontSize: 8, opacity: 0.6 }}>▾</span>
+                </button>
+
+                {isOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 50,
+                    minWidth: 180, maxHeight: 280, overflowY: 'auto',
+                    background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 6, padding: '6px 0',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                  }}>
+                    {isLoadingVals && (
+                      <div style={{ padding: '8px 12px', fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+                        Loading…
+                      </div>
+                    )}
+                    {!isLoadingVals && vals.length === 0 && (
+                      <div style={{ padding: '8px 12px', fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>
+                        No values
+                      </div>
+                    )}
+                    {!isLoadingVals && vals.map(function(val) {
+                      var checked = selected.indexOf(val) !== -1
+                      return (
+                        <label key={val} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '5px 12px',
+                          fontSize: 11, color: 'var(--text-primary)',
+                          fontFamily: 'var(--font-body)', cursor: 'pointer',
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={function() { toggleFilterValue(field, val) }}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearAllFilters}
+              style={{
+                marginLeft: 'auto',
+                padding: '5px 10px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                color: 'var(--text-tertiary)',
+                fontSize: 10,
+                fontFamily: 'var(--font-body)',
+                cursor: 'pointer',
+              }}
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '14px', textAlign: 'center', border: '1px dashed rgba(224,85,85,0.3)', borderRadius: 8, marginBottom: 12 }}>
