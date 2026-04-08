@@ -391,6 +391,14 @@ async function handleLongAskFlow(dsFmt) {
     '10. ONLY use node paths from the resolved tree. NEVER invent nodes.',
     '11. ONLY use dimension columns from the dimensions list. NEVER invent dimensions.',
     '12. Prefer high-priority nodes (business_priority = "high") when the question is vague.',
+    '13. MULTI-SERIES SPLITS: when the question asks to compare one metric across values of a dimension (e.g. "by region over time", "across LOBs"), generate a SINGLE query with one column per value and use chart_type "line" or "table":',
+    "    SELECT CONCAT(" + yf + ", '-', LPAD(CAST(" + mf + " AS TEXT), 2, '0')) AS period,",
+    '           SUM(CASE WHEN lob_level_1 = \'Private Banking\' AND <hier> THEN ' + valueCol + ' ELSE 0 END) AS private_banking,',
+    '           SUM(CASE WHEN lob_level_1 = \'Insurance\'       AND <hier> THEN ' + valueCol + ' ELSE 0 END) AS insurance',
+    '    FROM ' + tbl + ' WHERE <period>' + CF + ' GROUP BY ' + yf + ', ' + mf + ' ORDER BY period',
+    '    Use label_key="period" and leave value_key empty. Chart auto-renders one line per non-label column.',
+    '14. IMPORTANT: do NOT use this pattern for dimensions that appear in the MANDATORY FILTERS list — those values are locked and other values will return zero.',
+],
   ].join('\n')
 
   var twoPassTypeLong = getTwoPassType(question)
