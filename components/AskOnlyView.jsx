@@ -344,7 +344,18 @@ if (ct === 'waterfall') return <WaterfallChart key={result.id} result={result} m
     var ChartComp = ct === 'area' ? AreaChart : LineChart
     var DataComp  = ct === 'area' ? Area : Line
     var lKey      = result.label_key || 'period'
-    var vKey      = result.value_key || 'value'
+
+    // Detect multi-series: all numeric columns other than the label key become their own line
+    var firstRow = data[0] || {}
+    var allKeys  = Object.keys(firstRow)
+    var seriesKeys = allKeys.filter(function(k) {
+      if (k === lKey) return false
+      var v = firstRow[k]
+      return v !== null && v !== undefined && !isNaN(parseFloat(v))
+    })
+    // Fallback: if nothing detected, use value_key/current_key as a single series
+    if (!seriesKeys.length) seriesKeys = [result.value_key || result.current_key || 'value']
+
     return (
       <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
         <ResponsiveContainer width="100%" height={260}>
@@ -353,7 +364,14 @@ if (ct === 'waterfall') return <WaterfallChart key={result.id} result={result} m
             <XAxis dataKey={lKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
             <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-            <DataComp type="monotone" dataKey={vKey} stroke={color} strokeWidth={1.5} fill={ct === 'area' ? colorA : undefined} dot={false} activeDot={{ r: 4, fill: color }} />
+            {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} iconSize={8} />}
+            {seriesKeys.map(function(key, ki) {
+              var c = P[(idx + ki) % P.length]
+              var ca = PA[(idx + ki) % PA.length]
+              return (
+                <DataComp key={key} type="monotone" dataKey={key} name={key} stroke={c} strokeWidth={1.5} fill={ct === 'area' ? ca : undefined} dot={false} activeDot={{ r: 4, fill: c }} />
+              )
+            })}
           </ChartComp>
         </ResponsiveContainer>
       </ChartCard>
