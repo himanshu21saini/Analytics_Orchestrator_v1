@@ -309,30 +309,16 @@ async function generateLongFormatDashboard(args) {
     return Response.json({ error: 'No hierarchy nodes found for this metadata set.' }, { status: 404 })
   }
 
-  // Build periodInfo so the Dashboard header still renders
-  var yf = timePeriod.yearField  || 'report_year'
-  var mf = timePeriod.monthField || 'report_month'
-  var vt = timePeriod.viewType   || 'YTD'
-  var ct = timePeriod.comparisonType || 'YoY'
-  var yr = parseInt(timePeriod.year)  || new Date().getFullYear()
-  var mo = parseInt(timePeriod.month) || 12
-
-  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  var viewLabel = vt === 'MTD'
-    ? MONTHS[mo-1] + ' ' + yr + ' (MTD)'
-    : vt === 'YTD'
-      ? 'Jan–' + MONTHS[mo-1] + ' ' + yr + ' (YTD)'
-      : 'Q' + Math.ceil(mo/3) + ' ' + yr + ' (QTD)'
-  var cmpLabel = ct === 'YoY'
-    ? 'vs ' + (vt === 'MTD' ? MONTHS[mo-1] : vt === 'YTD' ? 'Jan–' + MONTHS[mo-1] : 'Q' + Math.ceil(mo/3)) + ' ' + (yr - 1) + ' (YoY)'
-    : 'vs prior period'
-
+// Use shared period builder so fiscal vs calendar logic is consistent
+  var f = buildPeriodFilters(timePeriod)
   var periodInfo = {
-    viewLabel: viewLabel,
-    cmpLabel:  cmpLabel,
-    yf:        yf,
-    mf:        mf,
-    curYear:   yr,
+    viewLabel: f.viewLabel,
+    cmpLabel:  f.cmpLabel,
+    yf:        f.yf,
+    mf:        f.mf,
+    curYear:   f.curYear,
+    curCond:   f.curCond,
+  }
   }
 
   return Response.json({
