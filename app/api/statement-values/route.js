@@ -1,4 +1,5 @@
 import { query } from '../../../lib/db'
+import { buildPeriodFilters } from '../../../lib/period-builder'
 
 function resolveInherited(nodesByPath, nodePath, fieldName) {
   var current = nodesByPath[nodePath]
@@ -62,33 +63,13 @@ export async function POST(request) {
       if (['SUM','AVG','COUNT','MAX','MIN'].indexOf(declared) !== -1) aggFn = declared
     }
 
-    // ── Time period math ─────────────────────────────────────────────────
-    var yf = timePeriod.yearField  || 'report_year'
-    var mf = timePeriod.monthField || 'report_month'
-    var vt = timePeriod.viewType   || 'YTD'
-    var ct = timePeriod.comparisonType || 'YoY'
-    var yr = parseInt(timePeriod.year)  || new Date().getFullYear()
-    var mo = parseInt(timePeriod.month) || 12
-
-    function quarterStart(m) { return Math.floor((m - 1) / 3) * 3 + 1 }
-    var curMonthMin = vt === 'MTD' ? mo : vt === 'YTD' ? 1 : quarterStart(mo)
-    var curMonthMax = mo
-    var cmpYear, cmpMonthMin, cmpMonthMax
-    if (ct === 'YoY')      { cmpYear = yr - 1; cmpMonthMin = curMonthMin; cmpMonthMax = curMonthMax }
-    else if (ct === 'MoM') { cmpYear = mo === 1 ? yr - 1 : yr; cmpMonthMin = cmpMonthMax = mo === 1 ? 12 : mo - 1 }
-    else { var cqs = quarterStart(mo); cmpYear = cqs <= 3 ? yr - 1 : yr; cmpMonthMin = cqs <= 3 ? cqs + 9 : cqs - 3; cmpMonthMax = cmpMonthMin + 2 }
-
-    function periodCond(year, mMin, mMax) {
-      var y = yf + ' = ' + year
-      var m = mMin === mMax ? mf + ' = ' + mMax : mf + ' >= ' + mMin + ' AND ' + mf + ' <= ' + mMax
-      return y + ' AND ' + m
-    }
-
-    // Cumulative uses full period range; point_in_time uses the LATEST month only
-    var curCondCumulative = periodCond(yr, curMonthMin, curMonthMax)
-    var cmpCondCumulative = periodCond(cmpYear, cmpMonthMin, cmpMonthMax)
-    var curCondPIT        = periodCond(yr, curMonthMax, curMonthMax)
-    var cmpCondPIT        = periodCond(cmpYear, cmpMonthMax, cmpMonthMax)
+    // Use the shared period builder so fiscal vs calendar math is consistent
+    // with generate-queries-route.js
+    var f = buildPeriodFilters(timePeriod)
+    var curCondCumulative = f.curCond
+    var cmpCondCumulative = f.cmpCond
+    var curCondPIT        = f.curCondPIT
+    var cmpCondPIT        = f.cmpCondPIT
 
     // ── Mandatory + dimension filters ────────────────────────────────────
     var mandatorySQL = mandatoryFilters.length
