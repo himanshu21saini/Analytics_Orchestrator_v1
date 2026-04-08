@@ -173,6 +173,13 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
 '26. For "highest/lowest single-day" questions, ALWAYS use a subquery that groups by entity + date, then ORDER BY + LIMIT on the outer query.',
 '    CORRECT: SELECT sub.dim AS label, sub.daily_val AS current_value FROM (SELECT dim, date_col, AGG(metric) AS daily_val FROM tbl WHERE period GROUP BY dim, date_col) sub ORDER BY sub.daily_val DESC LIMIT 1',
 '    CRITICAL: The outer SELECT must ONLY reference columns defined in the subquery (dim, date_col, daily_val). NEVER use original table columns or aggregate functions in the outer query.',
+    '27. MULTI-SERIES SPLITS: when the question asks to compare one metric across values of a dimension over time (e.g. "by region over time", "across segments"), generate a SINGLE query with one column per value using chart_type "line" or "table":',
+"    SELECT CONCAT(" + yf + ", '-', LPAD(CAST(" + mf + " AS TEXT), 2, '0')) AS period,",
+"           SUM(CASE WHEN dim_col = 'Value1' THEN COALESCE(metric_col, 0) ELSE 0 END) AS value1,",
+"           SUM(CASE WHEN dim_col = 'Value2' THEN COALESCE(metric_col, 0) ELSE 0 END) AS value2",
+'    FROM ' + tbl + ' WHERE <period condition> GROUP BY ' + yf + ', ' + mf + ' ORDER BY period',
+'    Use label_key="period" and leave value_key empty. Chart auto-renders one line per non-label column.',
+'28. Do NOT apply the multi-series pattern to dimensions that appear in the MANDATORY FILTERS list — those are locked to a single value and other values will return zero.',
   ].join('\n')
 }
 
