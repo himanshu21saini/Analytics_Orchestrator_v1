@@ -287,48 +287,213 @@ export async function POST(request) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LONG HIERARCHICAL DASHBOARD (Stage 1: returns hierarchy structure only)
-// Stage 4 will add LLM-generated supplementary charts here.
+// LONG HIERARCHICAL DASHBOARD — Stage 4: LLM supplementary charts
+// Replaces the previous placeholder version of generateLongFormatDashboard.
+// Returns query specs in the SAME shape as the wide path so Dashboard's
+// existing run-queries → chartResults pipeline works unchanged.
 // ═══════════════════════════════════════════════════════════════════════════
 async function generateLongFormatDashboard(args) {
   var datasetId        = args.datasetId
   var metadataSetId    = args.metadataSetId
   var timePeriod       = args.timePeriod
+  var userContext      = args.userContext || null
   var mandatoryFilters = args.mandatoryFilters || []
 
-  // Load metadata_rows (dimensions + value column rows)
+  var tbl = 'ds_' + datasetId
+
+  // ── Load dataset_format to get hierarchy + value column info ────────
+  var dsRow = await query('SELECT dataset_format FROM datasets WHERE id = $1', [datasetId])
+  if (!dsRow.length) return Response.json({ error: 'Dataset not found.' }, { status: 404 })
+  var dsFmt = dsRow[0].dataset_format
+  if (typeof dsFmt === 'string') { try { dsFmt = JSON.parse(dsFmt) } catch(e) { dsFmt = null } }
+  if (!dsFmt || dsFmt.format !== 'long_hierarchical') {
+    return Response.json({ error: 'Dataset is not long_hierarchical format.' }, { status: 400 })
+  }
+  var hierCols = dsFmt.hierarchyColumns || []
+  var valueCol = dsFmt.valueColumn
+  if (!valueCol || !hierCols.length) {
+    return Response.json({ error: 'dataset_format missing valueColumn or hierarchyColumns.' }, { status: 400 })
+  }
+
+  // ── Load metadata_rows (dimensions + value column row) ──────────────
   var metaRows = await query('SELECT * FROM metadata_rows WHERE metadata_set_id = $1 ORDER BY id', [metadataSetId])
 
-  // Load hierarchy nodes
+  // ── Load hierarchy nodes ─────────────────────────────────────────────
   var hierarchyNodes = await query(
     'SELECT node_path, node_name, level, parent_path, is_leaf, display_name, definition, accumulation_type, favorable_direction, business_priority, unit FROM hierarchy_nodes WHERE metadata_set_id = $1 ORDER BY level, node_path',
     [metadataSetId]
   )
-
   if (!hierarchyNodes.length) {
     return Response.json({ error: 'No hierarchy nodes found for this metadata set.' }, { status: 404 })
   }
 
-// Use shared period builder so fiscal vs calendar logic is consistent
+  // ── Period math ──────────────────────────────────────────────────────
   var f = buildPeriodFilters(timePeriod)
   var periodInfo = {
-    viewLabel: f.viewLabel,
-    cmpLabel:  f.cmpLabel,
-    yf:        f.yf,
-    mf:        f.mf,
-    curYear:   f.curYear,
-    curCond:   f.curCond,
+    viewLabel: f.viewLabel, cmpLabel: f.cmpLabel,
+    yf: f.yf, mf: f.mf, curYear: f.curYear, curCond: f.curCond,
   }
-  
+
+  // ── Context + mandatory filters → shared CF fragment ────────────────
+  var contextFilterSQL = ''
+  if (userContext && userContext.filters && userContext.filters.length) {
+    contextFilterSQL = userContext.filters.map(function(fi) {
+      var op = (fi.operator === 'equals' || fi.operator === '=') ? '='
+             : (fi.operator === 'not_equals' || fi.operator === '!=') ? '!='
+             : fi.operator
+      return " AND " + fi.field + " " + op + " '" + String(fi.value || '').replace(/'/g, "''") + "'"
+    }).join('')
+  }
+  var mandatoryFilterSQL = mandatoryFilters.length
+    ? mandatoryFilters.map(function(fi) { return " AND " + fi.field + " = '" + String(fi.value || '').replace(/'/g, "''") + "'" }).join('')
+    : ''
+  var CF = contextFilterSQL + mandatoryFilterSQL
+
+  // ── Dimensions + L1 nodes for prompt context ────────────────────────
+  var dims = metaRows.filter(function(m) { return m.type === 'dimension' && m.is_output !== 'N' })
+  var l1Nodes = hierarchyNodes.filter(function(n) { return n.level === 1 })
+
+  // Sample rows from the actual table for shape verification
+  var sampleRows = []
+  try { sampleRows = await query('SELECT * FROM ' + tbl + ' LIMIT 3') } catch(e) { console.warn('Sample failed:', e.message) }
+
+  // ── SQL templates for long format ────────────────────────────────────
+  // Placeholders:
+  //   __HIER_FILTER__  — one or more hierarchy column filters, e.g.:
+  //                      level_1 = 'Revenue'
+  //                      level_1 = 'Revenue' AND level_2 = 'Interest Income'
+  //   __DIM__          — dimension column name
+  var T = tbl
+  var WHERE = ' WHERE 1=1' + CF
+
+  var tplBar = 'SELECT __DIM__ AS label, '
+    + 'SUM(CASE WHEN ' + f.curCond + ' AND __HIER_FILTER__ THEN COALESCE(' + valueCol + ', 0) ELSE 0 END) AS current_value, '
+    + 'SUM(CASE WHEN ' + f.cmpCond + ' AND __HIER_FILTER__ THEN COALESCE(' + valueCol + ', 0) ELSE 0 END) AS comparison_value '
+    + 'FROM ' + T + WHERE
+    + " AND __DIM__ IS NOT NULL AND CAST(__DIM__ AS TEXT) != ''"
+    + ' GROUP BY __DIM__ ORDER BY current_value DESC NULLS LAST LIMIT 10'
+
+  var tplLine = 'SELECT CONCAT(' + f.yf + ", '-', LPAD(CAST(" + f.mf + " AS TEXT), 2, '0')) AS period, "
+    + 'SUM(COALESCE(' + valueCol + ', 0)) AS value '
+    + 'FROM ' + T
+    + ' WHERE ' + f.yf + ' = ' + f.curYear + ' AND __HIER_FILTER__' + CF
+    + ' GROUP BY ' + f.yf + ', ' + f.mf + ' ORDER BY period ASC'
+
+  var tplPie = 'SELECT __DIM__ AS label, '
+    + 'SUM(CASE WHEN ' + f.curCond + ' AND __HIER_FILTER__ THEN COALESCE(' + valueCol + ', 0) ELSE 0 END) AS value '
+    + 'FROM ' + T + WHERE
+    + " AND __DIM__ IS NOT NULL AND CAST(__DIM__ AS TEXT) != ''"
+    + ' GROUP BY __DIM__ ORDER BY value DESC LIMIT 6'
+
+  var mandNote = mandatoryFilters.length
+    ? '\n## MANDATORY FILTERS (pre-applied — do NOT add again)\n' + mandatoryFilters.map(function(fi) { return '  ' + (fi.display_name || fi.field) + ' = "' + fi.value + '"' }).join('\n')
+    : ''
+  var ctxNote = userContext && userContext.text ? '\n## USER CONTEXT\n' + userContext.text : ''
+
+  var sysMsg = 'Senior BI analyst. Return only valid JSON. Table: ' + tbl
+    + '. Long-hierarchical format: one numeric column (' + valueCol + ') with hierarchy columns (' + hierCols.join(', ') + ') and dimension columns. '
+    + 'Plain SQL with direct column access — no JSONB, no casting. Use field names exactly as listed.'
+
+  var prompt = [
+    '## TASK',
+    'Design 2–4 supplementary charts that complement the statement table. The statement table already shows the full hierarchy with current vs comparison values at every level. Your charts should reveal things the table cannot: dimensional breakdowns, time trends, or distribution patterns for the most important line items.',
+    '',
+    '## TABLE: ' + tbl,
+    'Value column: ' + valueCol + ' (numeric)',
+    'Hierarchy columns (ordered L1→Ln): ' + hierCols.join(', '),
+    '',
+    '## SAMPLE DATA (verify exact column names and value shapes)',
+    JSON.stringify(sampleRows, null, 2),
+    '',
+    '## TIME PERIOD',
+    'Year col: ' + f.yf + ' | Month col: ' + f.mf,
+    'Current:    ' + f.viewLabel + ' | WHERE ' + f.curCond,
+    'Comparison: ' + f.cmpLabel  + ' | WHERE ' + f.cmpCond,
+    mandNote,
+    ctxNote,
+    '',
+    '## HIERARCHY (Level 1 nodes you can focus on)',
+    JSON.stringify(l1Nodes.map(function(n) { return { node_path: n.node_path, name: n.display_name || n.node_name, priority: n.business_priority || 'medium', unit: n.unit || '' } }), null, 2),
+    '',
+    '## DIMENSIONS (for breakdowns)',
+    JSON.stringify(dims.map(function(d) { return { field_name: d.field_name, display_name: d.display_name } })),
+    '',
+    '## SQL TEMPLATES',
+    'Replace __HIER_FILTER__ with one or more hierarchy column filters, e.g.:',
+    "  level_1 = 'Revenue'",
+    "  level_1 = 'Revenue' AND level_2 = 'Interest Income'",
+    'Replace __DIM__ with a dimension column name.',
+    '',
+    'T-BAR  (dimensional breakdown with YoY compare):',
+    '  ' + tplBar,
+    'T-LINE (monthly trend for a hierarchy node):',
+    '  ' + tplLine,
+    'T-PIE  (current-period share by dimension):',
+    '  ' + tplPie,
+    '',
+    '## DESIGN RULES',
+    '1. Pick 2–4 charts total. Quality over quantity.',
+    '2. Focus on HIGH-priority L1 nodes (business_priority = "high") first.',
+    '3. Use T-BAR for the most important dimensional breakdown of a top-priority node.',
+    '4. Include 1 trend line (T-LINE) for a key flow-type node (Revenue, Expense, etc).',
+    '5. Use T-PIE only when distribution share is the clearest insight (mutually exclusive buckets).',
+    '6. Each chart MUST reference exactly one hierarchy node (or ancestor + descendant) via __HIER_FILTER__.',
+    '7. Bar charts MUST keep current_key="current_value" and comparison_key="comparison_value".',
+    '8. Each title should be specific: "<Node name> by <Dimension>" or "<Node name> — Monthly Trend".',
+    '',
+    '## OUTPUT — JSON only, no markdown',
+    '{"queries":[{"id":"snake_case","title":"Title","chart_type":"bar|line|area|pie|donut","sql":"SELECT...","current_key":"current_value","comparison_key":"comparison_value","value_key":"value","label_key":"label","unit":"","insight":"specific insight","priority":1}]}',
+  ].join('\n')
+
+  // ── Call OpenAI ──────────────────────────────────────────────────────
+  var apiKey = process.env.OPENAI_API_KEY
+  var queries = []
+  var usage = { prompt_tokens: 0, completion_tokens: 0, model: 'none' }
+
+  if (!apiKey) {
+    console.warn('OPENAI_API_KEY not set — returning empty supplementary charts for long format')
+  } else {
+    try {
+      var response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o', max_tokens: 3000, temperature: 0.15,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: sysMsg },
+            { role: 'user',   content: prompt },
+          ],
+        }),
+      })
+      var json = await response.json()
+      if (!response.ok) throw new Error((json.error && json.error.message) || 'OpenAI error ' + response.status)
+      var content = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content
+      if (!content) throw new Error('Empty response from OpenAI')
+      var parsed
+      try { parsed = JSON.parse(content.replace(/```json|```/g, '').trim()) }
+      catch(e) { throw new Error('Could not parse JSON: ' + content.slice(0, 300)) }
+      queries = parsed.queries || parsed
+      if (!Array.isArray(queries)) throw new Error('Expected queries array')
+      queries.sort(function(a, b) { return (a.priority || 99) - (b.priority || 99) })
+      var u = json.usage || {}
+      usage = { prompt_tokens: u.prompt_tokens || 0, completion_tokens: u.completion_tokens || 0, model: 'gpt-4o' }
+      console.log('=== Long-format supplementary charts generated:', queries.length)
+    } catch (err) {
+      console.error('generateLongFormatDashboard LLM error:', err.message)
+      // Soft-fail: return empty queries, StatementTable still works
+      queries = []
+    }
+  }
 
   return Response.json({
-    queries:        [],   // Stage 4 will populate
+    queries:        queries,
     metadata:       metaRows,
     hierarchyNodes: hierarchyNodes,
     datasetFormat:  'long_hierarchical',
     timePeriod:     timePeriod,
     periodInfo:     periodInfo,
     coverageData:   { kpiCoverage: [], dimCoverage: [], kpiCapUsed: 0, kpiCapMax: 0 },
-    usage:          { prompt_tokens: 0, completion_tokens: 0, model: 'none' },
+    usage:          usage,
   })
 }
