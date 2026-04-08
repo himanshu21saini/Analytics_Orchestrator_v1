@@ -688,12 +688,17 @@ async function runGenerateMetadata(dsId) {
       var gqJson = await gqRes.json()
       if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
       setProgress('Executing ' + (gqJson.queries ? gqJson.queries.length : '') + ' queries...')
-      var rqRes = await fetch('/api/run-queries', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries: gqJson.queries }),
-      })
-      var rqJson = await rqRes.json()
-      if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
+      
+      // Long format has no queries to run yet (Stage 4); skip run-queries entirely
+      var rqJson = { results: [] }
+      if (gqJson.queries && gqJson.queries.length > 0) {
+        var rqRes = await fetch('/api/run-queries', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ queries: gqJson.queries }),
+        })
+        rqJson = await rqRes.json()
+        if (!rqRes.ok) throw new Error(rqJson.error || 'Failed to run queries.')
+      }
       onReady({
         datasetId: finalDatasetId, metadataSetId: finalMetaId,
         queries: gqJson.queries, queryResults: rqJson.results,
@@ -704,6 +709,8 @@ async function runGenerateMetadata(dsId) {
         coverageData: gqJson.coverageData || null,
         preferences: prefs,
         mandatoryFilters,
+        datasetFormat:  gqJson.datasetFormat  || 'wide',
+        hierarchyNodes: gqJson.hierarchyNodes || [],
       })
     } catch(err) { setError(err.message); setWorking(false); setProgress('') }
   }
