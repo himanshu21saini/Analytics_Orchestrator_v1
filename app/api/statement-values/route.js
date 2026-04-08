@@ -1,7 +1,6 @@
 import { query } from '../../../lib/db'
 
 // ── Helper: walk up the tree to resolve an inherited field ──────────────────
-// nodes is the full list for this metadata set, indexed by path for O(1) lookup
 function resolveInherited(nodesByPath, nodePath, fieldName) {
   var current = nodesByPath[nodePath]
   while (current) {
@@ -13,8 +12,6 @@ function resolveInherited(nodesByPath, nodePath, fieldName) {
   return null
 }
 
-// ── Helper: which hierarchy column does each level live in? ─────────────────
-// Reads from datasets.dataset_format.hierarchyColumns
 function getLevelColumn(hierCols, level) {
   if (!hierCols || level < 1 || level > hierCols.length) return null
   return hierCols[level - 1]
@@ -23,12 +20,12 @@ function getLevelColumn(hierCols, level) {
 export async function POST(request) {
   try {
     var body = await request.json()
-    var datasetId       = body.datasetId
-    var metadataSetId   = body.metadataSetId
-    var nodePaths       = body.nodePaths || []
-    var timePeriod      = body.timePeriod || {}
-    var mandatoryFilters= body.mandatoryFilters || []
-    var dimensionFilters= body.dimensionFilters || []   // [{field, values: [...]}]
+    var datasetId        = body.datasetId
+    var metadataSetId    = body.metadataSetId
+    var nodePaths        = body.nodePaths || []
+    var timePeriod       = body.timePeriod || {}
+    var mandatoryFilters = body.mandatoryFilters || []
+    var dimensionFilters = body.dimensionFilters || []
 
     if (!datasetId)     return Response.json({ error: 'datasetId required.' }, { status: 400 })
     if (!metadataSetId) return Response.json({ error: 'metadataSetId required.' }, { status: 400 })
@@ -36,7 +33,6 @@ export async function POST(request) {
 
     var tbl = 'ds_' + datasetId
 
-    // ── Load dataset_format to find hierarchy columns + value column ───────
     var dsRow = await query('SELECT dataset_format FROM datasets WHERE id = $1', [datasetId])
     if (!dsRow.length) return Response.json({ error: 'Dataset not found.' }, { status: 404 })
     var datasetFormat = dsRow[0].dataset_format
@@ -48,7 +44,6 @@ export async function POST(request) {
     var valueCol = datasetFormat.valueColumn
     if (!valueCol) return Response.json({ error: 'No valueColumn in dataset_format.' }, { status: 400 })
 
-    // ── Load all hierarchy nodes for inheritance resolution ────────────────
     var allNodes = await query(
       'SELECT node_path, parent_path, level, accumulation_type, favorable_direction FROM hierarchy_nodes WHERE metadata_set_id = $1',
       [metadataSetId]
@@ -56,8 +51,6 @@ export async function POST(request) {
     var nodesByPath = {}
     allNodes.forEach(function(n) { nodesByPath[n.node_path] = n })
 
-    // ── Build period filters from timePeriod ────────────────────────────────
-    // Reuse same convention as generate-queries: yf, mf, viewType, comparisonType
     var yf = timePeriod.yearField  || 'report_year'
     var mf = timePeriod.monthField || 'report_month'
     var vt = timePeriod.viewType   || 'YTD'
@@ -78,14 +71,11 @@ export async function POST(request) {
       var m = mMin === mMax ? mf + ' = ' + mMax : mf + ' >= ' + mMin + ' AND ' + mf + ' <= ' + mMax
       return y + ' AND ' + m
     }
-    var curCond = periodCond(yr, curMonthMin, curMonthMax)
-    var cmpCond = periodCond(cmpYear, cmpMonthMin, cmpMonthMax)
-
-    // For point_in_time, restrict to single month (latest in period)
+    var curCond    = periodCond(yr, curMonthMin, curMonthMax)
+    var cmpCond    = periodCond(cmpYear, cmpMonthMin, cmpMonthMax)
     var curCondPIT = periodCond(yr, curMonthMax, curMonthMax)
     var cmpCondPIT = periodCond(cmpYear, cmpMonthMax, cmpMonthMax)
 
-    // ── Mandatory + dimension filters as SQL ────────────────────────────────
     var mandatorySQL = mandatoryFilters.length
       ? mandatoryFilters.map(function(f) { return " AND " + f.field + " = '" + String(f.value || '').replace(/'/g, "''") + "'" }).join('')
       : ''
@@ -97,24 +87,22 @@ export async function POST(request) {
     })
     var CF = mandatorySQL + dimFilterSQL
 
-    // ── For each requested node, build & execute one query ──────────────────
     var results = {}
     for (var i = 0; i < nodePaths.length; i++) {
       var path = nodePaths[i]
       var node = nodesByPath[path]
       if (!node) { results[path] = { error: 'Node not found in metadata' }; continue }
 
-      // Build hierarchy WHERE conditions from the path
       var pathParts = path.split(' > ')
       var hierWhere = []
+      var skipNode = false
       for (var j = 0; j < pathParts.length; j++) {
         var col = getLevelColumn(hierCols, j + 1)
-        if (!col) { hierWhere = null; break }
+        if (!col) { skipNode = true; break }
         hierWhere.push(col + " = '" + pathParts[j].replace(/'/g, "''") + "'")
       }
-      if (!hierWhere) { results[path] = { error: 'Could not map hierarchy columns' }; continue }
+      if (skipNode) { results[path] = { error: 'Could not map hierarchy columns' }; continue }
 
-      // Resolve accumulation_type via inheritance
       var accType = resolveInherited(nodesByPath, path, 'accumulation_type') || 'cumulative'
       var aggFn = accType === 'point_in_time' ? 'AVG' : 'SUM'
       var useCur = accType === 'point_in_time' ? curCondPIT : curCond
@@ -122,7 +110,31 @@ export async function POST(request) {
 
       var hierWhereSQL = hierWhere.join(' AND ')
 
-      var sql =
-        'SELECT ' +
-          aggFn + '(CASE WHEN ' + useCur + ' THEN COALESCE(' + valueCol + ', 0) ELSE NULL END) AS current_value, ' +
-          aggFn + '(CASE WHEN ' + useCmp + ' THEN COALESCE(' + valueCol + ', 0) ELSE NULL
+      var curExpr = aggFn + '(CASE WHEN ' + useCur + ' THEN COALESCE(' + valueCol + ', 0) ELSE NULL END)'
+      var cmpExpr = aggFn + '(CASE WHEN ' + useCmp + ' THEN COALESCE(' + valueCol + ', 0) ELSE NULL END)'
+      var sql = 'SELECT ' + curExpr + ' AS current_value, ' + cmpExpr + ' AS comparison_value FROM ' + tbl + ' WHERE ' + hierWhereSQL + CF
+
+      try {
+        var rows = await query(sql)
+        var row = rows[0] || {}
+        var cur = row.current_value !== null && row.current_value !== undefined ? parseFloat(row.current_value) : null
+        var cmp = row.comparison_value !== null && row.comparison_value !== undefined ? parseFloat(row.comparison_value) : null
+        results[path] = {
+          current_value:       cur,
+          comparison_value:    cmp,
+          accumulation_type:   accType,
+          favorable_direction: resolveInherited(nodesByPath, path, 'favorable_direction'),
+          sql:                 sql,
+        }
+      } catch(err) {
+        console.error('statement-values query error for', path, ':', err.message)
+        results[path] = { error: err.message, sql: sql }
+      }
+    }
+
+    return Response.json({ values: results })
+  } catch (err) {
+    console.error('statement-values error:', err)
+    return Response.json({ error: err.message }, { status: 500 })
+  }
+}
