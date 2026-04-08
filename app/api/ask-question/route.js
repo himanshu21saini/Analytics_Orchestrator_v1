@@ -55,27 +55,25 @@ function parseTimeFromQuestion(question, periodInfo) {
   // 3. Rolling: "last 3 months"
   var m3 = q.match(/last\s+(\d+)\s+months?/i)
   if (m3) { var n = parseInt(m3[1]); var toD = new Date(); var fromD = new Date(toD.getFullYear(), toD.getMonth() - n + 1, 1); return { type: 'range', fromYear: fromD.getFullYear(), fromMonth: fromD.getMonth()+1, toYear: toD.getFullYear(), toMonth: toD.getMonth()+1, label: 'Last ' + n + ' months', forceFiscal: forceFiscal } }
-  // 3b. Rolling quarters: "last 2 quarters", "last quarter"
+  // 3b. Rolling quarters: "last quarter", "last 2 quarters"
   var m3q = q.match(/last\s+(\d+)?\s*quarters?/i)
   if (m3q) {
     var nq = parseInt(m3q[1] || '1')
-    var curY = curYear
-    var curM = (periodInfo && periodInfo.curCond) ? (new Date().getMonth() + 1) : 12
-    // Current quarter based on slider month, then walk back nq quarters
-    var curQ = Math.ceil(curM / 3)
-    var targetQ = curQ - nq
-    var targetY = curY
-    while (targetQ < 1) { targetQ += 4; targetY -= 1 }
-    var endQ = curQ - 1  // "last" = excluding current
-    var endY = curY
-    if (endQ < 1) { endQ = 4; endY -= 1 }
-    var fromMonth = (targetQ - 1) * 3 + 1
-    var toMonth   = endQ * 3
+    // Use slider's month — already fiscal-numbered if slider is in fiscal mode
+    var sliderY = (timePeriod && timePeriod.year)  ? parseInt(timePeriod.year)  : curYear
+    var sliderM = (timePeriod && timePeriod.month) ? parseInt(timePeriod.month) : 12
+    var curQ    = Math.ceil(sliderM / 3)
+    // "Last quarter" = previous completed quarter
+    var endQ = curQ - 1; var endY = sliderY
+    if (endQ < 1) { endQ += 4; endY -= 1 }
+    var startQ = endQ - nq + 1; var startY = endY
+    while (startQ < 1) { startQ += 4; startY -= 1 }
     return {
       type: 'range',
-      fromYear: targetY, fromMonth: fromMonth,
-      toYear:   endY,    toMonth:   toMonth,
-      label: nq === 1 ? 'Last quarter' : 'Last ' + nq + ' quarters',
+      fromYear: startY, fromMonth: (startQ - 1) * 3 + 1,
+      toYear:   endY,   toMonth:   endQ * 3,
+      label: nq === 1 ? 'Last quarter (Q' + endQ + ' ' + endY + ')'
+                      : 'Last ' + nq + ' quarters (Q' + startQ + ' ' + startY + '–Q' + endQ + ' ' + endY + ')',
       forceFiscal: forceFiscal,
     }
   }
@@ -188,6 +186,7 @@ export async function POST(request) {
   var datasetId        = body.datasetId
   var metadata         = body.metadata         || []
   var periodInfo       = body.periodInfo        || {}
+  var parsedTime = parseTimeFromQuestion(question, periodInfo, timePeriod)
   var userContext      = body.userContext       || null
   var mandatoryFilters = body.mandatoryFilters  || []
 
