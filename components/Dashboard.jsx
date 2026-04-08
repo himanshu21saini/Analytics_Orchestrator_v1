@@ -16,6 +16,7 @@ import CoveragePanel from './CoveragePanel'
 
 import CreateTaskModal from './CreateTaskModal'
 import TaskTracker from './TaskTracker'
+import StatementTable from './StatementTable'
 
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 var PA = ['rgba(0,200,240,0.5)','rgba(43,127,227,0.5)','rgba(0,180,160,0.5)','rgba(123,143,240,0.5)','rgba(240,160,48,0.5)','rgba(155,127,227,0.5)','rgba(16,196,138,0.5)','rgba(224,85,85,0.5)']
@@ -314,8 +315,9 @@ var [showTrackMenu,   setShowTrackMenu]   = useState(false)
   var periodInfo       = session.periodInfo       || {}
   var allQueries       = session.queries          || []
   var prefs            = session.preferences      || {}
-  var mandatoryFilters = session.mandatoryFilters  || []   // ── NEW
-
+  var mandatoryFilters = session.mandatoryFilters  || []   
+  var datasetFormat    = session.datasetFormat    || 'wide'
+  
   var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
   var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
   var drillResults = queryResults.filter(function(r) { return r.chart_type === 'drilldown' && !r.error && r.data && r.data.length })
@@ -688,17 +690,21 @@ if (ct === 'waterfall') {
 
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
-      {visibleKpis.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
-          {visibleKpis.map(function(r, i) {
-            var row = r.data[0] || {}; var curKey = r.current_key || r.value_key || 'current_value'; var cmpKey = r.comparison_key || 'comparison_value'
-            var meta = metadata.find(function(m) { return m.field_name === r.id }) 
-        || metadata.find(function(m) { return r.id && r.id.startsWith(m.field_name) })
-        || metadata.find(function(m) { return m.display_name && (r.title || '').toLowerCase() === m.display_name.toLowerCase() })
-var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
-          return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
-          })}
-        </div>
+      {datasetFormat === 'long_hierarchical' ? (
+        <StatementTable session={session} />
+      ) : (
+        visibleKpis.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
+            {visibleKpis.map(function(r, i) {
+              var row = r.data[0] || {}; var curKey = r.current_key || r.value_key || 'current_value'; var cmpKey = r.comparison_key || 'comparison_value'
+              var meta = metadata.find(function(m) { return m.field_name === r.id })
+                || metadata.find(function(m) { return r.id && r.id.startsWith(m.field_name) })
+                || metadata.find(function(m) { return m.display_name && (r.title || '').toLowerCase() === m.display_name.toLowerCase() })
+              var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
+              return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
+            })}
+          </div>
+        )
       )}
 
       {(trendResults.length > 0 || chartResults.length > 0) && <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />}
