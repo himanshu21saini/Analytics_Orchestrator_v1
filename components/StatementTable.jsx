@@ -122,7 +122,10 @@ export default function StatementTable({ session }) {
       .then(function(r) { return r.json() })
       .then(function(json) {
         var fields = json.fields || []
-        var dims = fields.filter(function(f) { return f.type === 'dimension' })
+        var dims = fields.filter(function(f) {
+  return f.type === 'dimension' &&
+    (f.mandatory_filter_value === null || f.mandatory_filter_value === undefined || f.mandatory_filter_value === '')
+})
         setDimensions(dims)
       })
       .catch(function(err) { console.error('metadata-fields fetch failed:', err.message) })
@@ -228,15 +231,19 @@ export default function StatementTable({ session }) {
   var visibleRows = useMemo(function() {
     var out = []
     function walk(parent) {
-      var kids = childrenByParent[parent] || []
-      kids.forEach(function(node) {
-        out.push(node)
-        if (expandedPaths[node.node_path]) walk(node.node_path)
-      })
-    }
+  var kids = childrenByParent[parent] || []
+  kids.forEach(function(node) {
+    var v = values[node.node_path]
+    var bothNull = v && (v.current_value === null || v.current_value === undefined) &&
+                         (v.comparison_value === null || v.comparison_value === undefined)
+    if (activeFilterCount > 0 && bothNull) return  // skip this node and its subtree
+    out.push(node)
+    if (expandedPaths[node.node_path]) walk(node.node_path)
+  })
+}
     walk('__ROOT__')
     return out
-  }, [hierarchyNodes, expandedPaths, childrenByParent])
+  }, [hierarchyNodes, expandedPaths, childrenByParent,values, activeFilterCount]])
 
   if (!hierarchyNodes.length) return null
 
