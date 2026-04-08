@@ -319,7 +319,7 @@ async function generateLongFormatDashboard(args) {
     curYear:   f.curYear,
     curCond:   f.curCond,
   }
-  }
+  
 
   return Response.json({
     queries:        [],   // Stage 4 will populate
