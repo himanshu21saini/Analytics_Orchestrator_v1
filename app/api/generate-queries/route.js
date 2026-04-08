@@ -153,6 +153,19 @@ export async function POST(request) {
 
   var tbl = 'ds_' + datasetId
 
+  // ── Branch on dataset format ─────────────────────────────────────────────
+  var setRow = await query('SELECT dataset_format FROM metadata_sets WHERE id = $1', [metadataSetId])
+  var datasetFormatType = setRow.length ? (setRow[0].dataset_format || 'wide') : 'wide'
+
+  if (datasetFormatType === 'long_hierarchical') {
+    return await generateLongFormatDashboard({
+      datasetId: datasetId,
+      metadataSetId: metadataSetId,
+      timePeriod: timePeriod,
+      userContext: userContext,
+      mandatoryFilters: mandatoryFilters,
+    })
+  }
   // Context filters
   var contextFilterSQL = ''
   if (userContext && userContext.filters && userContext.filters.length) {
@@ -323,4 +336,65 @@ export async function POST(request) {
     console.error('generate-queries error:', err.message)
     return Response.json({ error: err.message || 'Failed to generate queries.' }, { status: 500 })
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LONG HIERARCHICAL DASHBOARD (Stage 1: returns hierarchy structure only)
+// Stage 4 will add LLM-generated supplementary charts here.
+// ═══════════════════════════════════════════════════════════════════════════
+async function generateLongFormatDashboard(args) {
+  var datasetId        = args.datasetId
+  var metadataSetId    = args.metadataSetId
+  var timePeriod       = args.timePeriod
+  var mandatoryFilters = args.mandatoryFilters || []
+
+  // Load metadata_rows (dimensions + value column rows)
+  var metaRows = await query('SELECT * FROM metadata_rows WHERE metadata_set_id = $1 ORDER BY id', [metadataSetId])
+
+  // Load hierarchy nodes
+  var hierarchyNodes = await query(
+    'SELECT node_path, node_name, level, parent_path, is_leaf, display_name, definition, accumulation_type, favorable_direction, business_priority, unit FROM hierarchy_nodes WHERE metadata_set_id = $1 ORDER BY level, node_path',
+    [metadataSetId]
+  )
+
+  if (!hierarchyNodes.length) {
+    return Response.json({ error: 'No hierarchy nodes found for this metadata set.' }, { status: 404 })
+  }
+
+  // Build periodInfo so the Dashboard header still renders
+  var yf = timePeriod.yearField  || 'report_year'
+  var mf = timePeriod.monthField || 'report_month'
+  var vt = timePeriod.viewType   || 'YTD'
+  var ct = timePeriod.comparisonType || 'YoY'
+  var yr = parseInt(timePeriod.year)  || new Date().getFullYear()
+  var mo = parseInt(timePeriod.month) || 12
+
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  var viewLabel = vt === 'MTD'
+    ? MONTHS[mo-1] + ' ' + yr + ' (MTD)'
+    : vt === 'YTD'
+      ? 'Jan–' + MONTHS[mo-1] + ' ' + yr + ' (YTD)'
+      : 'Q' + Math.ceil(mo/3) + ' ' + yr + ' (QTD)'
+  var cmpLabel = ct === 'YoY'
+    ? 'vs ' + (vt === 'MTD' ? MONTHS[mo-1] : vt === 'YTD' ? 'Jan–' + MONTHS[mo-1] : 'Q' + Math.ceil(mo/3)) + ' ' + (yr - 1) + ' (YoY)'
+    : 'vs prior period'
+
+  var periodInfo = {
+    viewLabel: viewLabel,
+    cmpLabel:  cmpLabel,
+    yf:        yf,
+    mf:        mf,
+    curYear:   yr,
+  }
+
+  return Response.json({
+    queries:        [],   // Stage 4 will populate
+    metadata:       metaRows,
+    hierarchyNodes: hierarchyNodes,
+    datasetFormat:  'long_hierarchical',
+    timePeriod:     timePeriod,
+    periodInfo:     periodInfo,
+    coverageData:   { kpiCoverage: [], dimCoverage: [], kpiCapUsed: 0, kpiCapMax: 0 },
+    usage:          { prompt_tokens: 0, completion_tokens: 0, model: 'none' },
+  })
 }
