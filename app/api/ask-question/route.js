@@ -35,24 +35,55 @@ function getTwoPassType(question) {
 
 function isTwoPassQuestion(question) { return !!getTwoPassType(question) }
 
-function parseTimeFromQuestion(question) {
+function parseTimeFromQuestion(question, periodInfo) {
   var q = question.toLowerCase()
+  var curYear = (periodInfo && periodInfo.curYear) || new Date().getFullYear()
+
+  // Explicit fiscal/report override in question — overrides whatever the slider says
+  var forceFiscal = /\bfiscal\b|\bfy\b/i.test(q) ? true
+                  : /\breport(ing)?\s+year\b/i.test(q) ? false
+                  : null  // null = use slider default
+
+  // 1. Month + year: "jan 2024", "january '24"
   var m1 = q.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)['\s]+(\d{2,4})/i)
-  if (m1) { var monthNum = MONTHS_MAP[m1[1].toLowerCase()]; var yr = parseInt(m1[2]); if (yr < 100) yr += 2000; return { year: yr, month: monthNum, label: m1[1] + ' ' + yr, type: 'month' } }
+  if (m1) { var monthNum = MONTHS_MAP[m1[1].toLowerCase()]; var yr = parseInt(m1[2]); if (yr < 100) yr += 2000; return { year: yr, month: monthNum, label: m1[1] + ' ' + yr, type: 'month', forceFiscal: forceFiscal } }
+
+  // 2. Quarter: "Q1 '24", "q3 2023"
   var m2 = q.match(/\bq([1-4])\s*'?(\d{2,4})/i)
-  if (m2) { var qtr = parseInt(m2[1]); var yr2 = parseInt(m2[2]); if (yr2 < 100) yr2 += 2000; var mMin = (qtr-1)*3+1; var mMax = qtr*3; return { year: yr2, monthMin: mMin, monthMax: mMax, label: 'Q'+qtr+' '+yr2, type: 'quarter' } }
+  if (m2) { var qtr = parseInt(m2[1]); var yr2 = parseInt(m2[2]); if (yr2 < 100) yr2 += 2000; var mMin = (qtr-1)*3+1; var mMax = qtr*3; return { year: yr2, monthMin: mMin, monthMax: mMax, label: 'Q'+qtr+' '+yr2, type: 'quarter', forceFiscal: forceFiscal } }
+
+  // 3. Rolling: "last 3 months"
   var m3 = q.match(/last\s+(\d+)\s+months?/i)
-  if (m3) { var n = parseInt(m3[1]); var toD = new Date(); var fromD = new Date(toD.getFullYear(), toD.getMonth() - n + 1, 1); return { type: 'range', fromYear: fromD.getFullYear(), fromMonth: fromD.getMonth()+1, toYear: toD.getFullYear(), toMonth: toD.getMonth()+1, label: 'Last ' + n + ' months' } }
+  if (m3) { var n = parseInt(m3[1]); var toD = new Date(); var fromD = new Date(toD.getFullYear(), toD.getMonth() - n + 1, 1); return { type: 'range', fromYear: fromD.getFullYear(), fromMonth: fromD.getMonth()+1, toYear: toD.getFullYear(), toMonth: toD.getMonth()+1, label: 'Last ' + n + ' months', forceFiscal: forceFiscal } }
+
+  // 4. Relative year keywords
+  if (/\b(last|previous|prior)\s+year\b/i.test(q))       return { type: 'full_year', year: curYear - 1, label: String(curYear - 1), forceFiscal: forceFiscal }
+  if (/\b(latest|current|this)\s+year\b/i.test(q))        return { type: 'full_year', year: curYear,     label: String(curYear),     forceFiscal: forceFiscal }
+  if (/\byear\s+before\s+last\b|\btwo\s+years?\s+ago\b/i.test(q)) return { type: 'full_year', year: curYear - 2, label: String(curYear - 2), forceFiscal: forceFiscal }
+  if (/\bytd\b/i.test(q))                                 return null  // fall back to slider (which is already YTD-style)
+
+  // 5. Bare year: "2024", "FY2024", "2023 report year"
+  var m4 = q.match(/\b(?:fy\s*)?(\d{4})\b/i)
+  if (m4) { var yr4 = parseInt(m4[1]); return { type: 'full_year', year: yr4, label: (forceFiscal ? 'FY' : '') + yr4, forceFiscal: forceFiscal } }
+
   return null
 }
 
 function buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf) {
+  // Honor fiscal/report override from question
+  var effYf = yf; var effMf = mf
+  if (parsedTime && parsedTime.forceFiscal !== null && parsedTime.forceFiscal !== undefined) {
+    effYf = parsedTime.forceFiscal ? 'fiscal_year'  : 'report_year'
+    effMf = parsedTime.forceFiscal ? 'fiscal_month' : 'report_month'
+  }
+
   if (parsedTime) {
-    if (parsedTime.type === 'month') return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' = ' + parsedTime.month, label: parsedTime.label }
-    if (parsedTime.type === 'quarter') return { cond: yf + ' = ' + parsedTime.year + ' AND ' + mf + ' >= ' + parsedTime.monthMin + ' AND ' + mf + ' <= ' + parsedTime.monthMax, label: parsedTime.label }
+    if (parsedTime.type === 'month')     return { cond: effYf + ' = ' + parsedTime.year + ' AND ' + effMf + ' = ' + parsedTime.month, label: parsedTime.label }
+    if (parsedTime.type === 'quarter')   return { cond: effYf + ' = ' + parsedTime.year + ' AND ' + effMf + ' >= ' + parsedTime.monthMin + ' AND ' + effMf + ' <= ' + parsedTime.monthMax, label: parsedTime.label }
+    if (parsedTime.type === 'full_year') return { cond: effYf + ' = ' + parsedTime.year, label: parsedTime.label }
     if (parsedTime.type === 'range') {
-      var cond = '(' + yf + ' > ' + parsedTime.fromYear + ' OR (' + yf + ' = ' + parsedTime.fromYear + ' AND ' + mf + ' >= ' + parsedTime.fromMonth + '))' +
-        ' AND (' + yf + ' < ' + parsedTime.toYear + ' OR (' + yf + ' = ' + parsedTime.toYear + ' AND ' + mf + ' <= ' + parsedTime.toMonth + '))'
+      var cond = '(' + effYf + ' > ' + parsedTime.fromYear + ' OR (' + effYf + ' = ' + parsedTime.fromYear + ' AND ' + effMf + ' >= ' + parsedTime.fromMonth + '))' +
+        ' AND (' + effYf + ' < ' + parsedTime.toYear + ' OR (' + effYf + ' = ' + parsedTime.toYear + ' AND ' + effMf + ' <= ' + parsedTime.toMonth + '))'
       return { cond: cond, label: parsedTime.label }
     }
   }
@@ -152,7 +183,7 @@ export async function POST(request) {
   var mandatoryFilterSQL = mandatoryFilters.length ? mandatoryFilters.map(function(f) { return " AND " + f.field + " = '" + String(f.value || '').replace(/'/g, "''") + "'" }).join('') : ''
   var CF = contextFilterSQL + mandatoryFilterSQL
 
-  var parsedTime  = parseTimeFromQuestion(question)
+  var parsedTime  = parseTimeFromQuestion(question,periodInfo)
   var yf          = periodInfo.yf || 'report_year'
   var mf          = periodInfo.mf || 'report_month'
   var periodConds = buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf)
