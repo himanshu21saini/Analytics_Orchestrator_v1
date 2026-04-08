@@ -243,7 +243,7 @@ export default function StatementTable({ session }) {
 }
     walk('__ROOT__')
     return out
-  }, [hierarchyNodes, expandedPaths, childrenByParent,values, activeFilterCount]])
+  }, [hierarchyNodes, expandedPaths, childrenByParent,values, activeFilterCount])
 
   if (!hierarchyNodes.length) return null
 
