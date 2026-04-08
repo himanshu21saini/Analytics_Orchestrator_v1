@@ -1,5 +1,5 @@
 import { query } from '../../../lib/db'
-import { FISCAL_START_MONTH, MONTH_SHORT, toFiscal, fiscalRangeLabel } from '../../../lib/fiscal-config'
+import { buildPeriodFilters } from '../../../lib/period-builder'
 
 var MONTHS = MONTH_SHORT
 
