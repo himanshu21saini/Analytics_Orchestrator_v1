@@ -430,7 +430,7 @@ if (ct === 'waterfall') return <WaterfallChart key={result.id} result={result} m
     try {
       var res = await fetch('/api/ask-question', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ question: q, datasetId, metadata, periodInfo, userContext, mandatoryFilters, metadataSetId: session.metadataSetId }),
+body: JSON.stringify({ question: q, datasetId, metadata, periodInfo, userContext, mandatoryFilters, metadataSetId: session.metadataSetId, timePeriod: session.timePeriod }),
       })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Question failed.')
