@@ -189,6 +189,7 @@ export async function POST(request) {
   var parsedTime = parseTimeFromQuestion(question, periodInfo, timePeriod)
   var userContext      = body.userContext       || null
   var mandatoryFilters = body.mandatoryFilters  || []
+  var timePeriod = body.timePeriod || {}
 
   if (!question || !datasetId) return Response.json({ error: 'question and datasetId are required.' }, { status: 400 })
 
