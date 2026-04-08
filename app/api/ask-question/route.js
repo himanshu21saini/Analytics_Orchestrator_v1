@@ -211,6 +211,374 @@ export async function POST(request) {
     return results
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+// LONG-FORMAT ASK FLOW
+// Insert this block inside POST(), AFTER `executeQueries` is defined and
+// BEFORE the "// ── TWO-PASS FLOW ──" comment.
+//
+// Requires the frontend to include `metadataSetId` in the request body.
+// Uses closure access to: callOpenAI, executeQueries, totalUsage,
+// periodConds, CF, contextNote, mandatoryNote, yf, mf, tbl, question,
+// userContext, mandatoryFilters, parsedTime
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 1. Detect format and branch ────────────────────────────────────────
+var metadataSetId = body.metadataSetId
+var dsRowAsk
+try { dsRowAsk = await query('SELECT dataset_format FROM datasets WHERE id = $1', [datasetId]) }
+catch(e) { dsRowAsk = [] }
+var dsFmtAsk = dsRowAsk.length ? dsRowAsk[0].dataset_format : null
+if (typeof dsFmtAsk === 'string') { try { dsFmtAsk = JSON.parse(dsFmtAsk) } catch(e) { dsFmtAsk = null } }
+var isLongAsk = dsFmtAsk && dsFmtAsk.format === 'long_hierarchical'
+
+if (isLongAsk) {
+  if (!metadataSetId) {
+    return Response.json({ error: 'metadataSetId is required for long-format questions.' }, { status: 400 })
+  }
+  return await handleLongAskFlow(dsFmtAsk)
+}
+
+// ── 2. Handler function (also inside POST closure) ─────────────────────
+async function handleLongAskFlow(dsFmt) {
+  var hierCols = dsFmt.hierarchyColumns || []
+  var valueCol = dsFmt.valueColumn
+  if (!valueCol || !hierCols.length) {
+    return Response.json({ error: 'dataset_format missing valueColumn or hierarchyColumns.' }, { status: 400 })
+  }
+
+  // Load hierarchy nodes
+  var nodes = await query(
+    'SELECT node_path, node_name, parent_path, level, is_leaf, display_name, definition, accumulation_type, favorable_direction, business_priority, unit FROM hierarchy_nodes WHERE metadata_set_id = $1 ORDER BY level, node_path',
+    [metadataSetId]
+  )
+  if (!nodes.length) return Response.json({ error: 'No hierarchy nodes found for this metadata set.' }, { status: 404 })
+
+  var nodesByPath = {}
+  nodes.forEach(function(n) { nodesByPath[n.node_path] = n })
+
+  function resolveInherited(path, field) {
+    var cur = nodesByPath[path]
+    while (cur) {
+      var v = cur[field]
+      if (v !== null && v !== undefined && String(v).trim() !== '') return v
+      if (!cur.parent_path) return null
+      cur = nodesByPath[cur.parent_path]
+    }
+    return null
+  }
+
+  // Build resolved tree for the prompt — inheritance pre-applied
+  var resolvedTree = nodes.map(function(n) {
+    return {
+      path:                n.node_path,
+      name:                n.display_name || n.node_name,
+      level:               n.level,
+      parent:              n.parent_path || null,
+      definition:          n.definition || '',
+      accumulation_type:   resolveInherited(n.node_path, 'accumulation_type') || 'cumulative',
+      favorable_direction: resolveInherited(n.node_path, 'favorable_direction') || 'i',
+      business_priority:   resolveInherited(n.node_path, 'business_priority') || 'medium',
+      unit:                resolveInherited(n.node_path, 'unit') || '',
+    }
+  })
+
+  // Dimensions from metadata array (passed in by frontend)
+  var dimsList = (metadata || [])
+    .filter(function(m) { return m.type === 'dimension' && m.is_output !== 'N' })
+    .map(function(m) { return { field_name: m.field_name, display_name: m.display_name, data_type: m.data_type || '' } })
+
+  // Sample rows for LLM to verify column shapes
+  var sampleRowsAsk = []
+  try { sampleRowsAsk = await query('SELECT * FROM ' + tbl + ' LIMIT 3') } catch(e) {}
+
+  // Build long-format prompt base
+  var promptBaseLong = [
+    '## DATABASE',
+    'Table: ' + tbl + ' (real typed SQL columns — NOT JSONB)',
+    'This is a LONG-HIERARCHICAL dataset:',
+    '  - One numeric column: ' + valueCol,
+    '  - Hierarchy columns (L1→Ln): ' + hierCols.join(', '),
+    '  - Dimension columns: ' + dimsList.map(function(d) { return d.field_name }).join(', '),
+    'Every query MUST filter by hierarchy columns to scope to a specific business concept.',
+    'Example: WHERE level_1 = \'Revenue\' AND level_2 = \'Interest Income\'',
+    '',
+    '## TIME PERIOD',
+    'Year column: ' + yf + ' | Month column: ' + mf,
+    'Period label: ' + periodConds.label,
+    'Period SQL condition: ' + periodConds.cond,
+    contextNote,
+    mandatoryNote,
+    '',
+    '## SAMPLE DATA (verify column names + shapes)',
+    JSON.stringify(sampleRowsAsk, null, 2),
+    '',
+    '## RESOLVED HIERARCHY TREE (inheritance applied)',
+    JSON.stringify(resolvedTree, null, 2),
+    '',
+    '## DIMENSIONS',
+    JSON.stringify(dimsList, null, 2),
+    '',
+    '## SQL RULES',
+    '1. Direct column access — NO data->>\'\' syntax, NO ::numeric casting.',
+    '2. Every query must include WHERE ' + periodConds.cond + CF + ' AND <hierarchy filter>',
+    '3. Use SUM(' + valueCol + ') as the aggregation. At monthly grain SUM works for both cumulative and point_in_time.',
+    '4. To reference a hierarchy node, build the WHERE clause from its path. Example for "Revenue > Interest Income":',
+    '   AND ' + (hierCols[0] || 'level_1') + " = 'Revenue' AND " + (hierCols[1] || 'level_2') + " = 'Interest Income'",
+    '5. For ranking entities: SELECT dim AS label, SUM(' + valueCol + ') AS current_value FROM tbl WHERE ... AND <hier> GROUP BY dim ORDER BY current_value DESC LIMIT 10',
+    '6. For trend: SELECT CONCAT(' + yf + ", '-', LPAD(CAST(" + mf + " AS TEXT), 2, '0')) AS period, SUM(" + valueCol + ') AS value FROM tbl WHERE ... AND <hier> GROUP BY ' + yf + ', ' + mf + ' ORDER BY period',
+    '7. For YoY comparison on a node: use CASE WHEN current_period THEN ' + valueCol + ' ELSE 0 END for current_value and CASE WHEN comparison_period THEN ' + valueCol + ' ELSE 0 END for comparison_value.',
+    '8. For multi-node comparison (e.g. parent vs children), use one column per node with CASE WHEN <hier filter> THEN ' + valueCol + ' END. Use chart_type "table" if more than 3 columns.',
+    '9. Honor favorable_direction from the resolved tree when interpreting "improvement" or "decline".',
+    '10. ONLY use node paths from the resolved tree. NEVER invent nodes.',
+    '11. ONLY use dimension columns from the dimensions list. NEVER invent dimensions.',
+    '12. Prefer high-priority nodes (business_priority = "high") when the question is vague.',
+  ].join('\n')
+
+  var twoPassTypeLong = getTwoPassType(question)
+
+  // ── SINGLE-PASS LONG FLOW ───────────────────────────────────────────
+  if (!twoPassTypeLong) {
+    var singlePrompt = [
+      '## TASK',
+      'Generate 1-4 SQL queries to answer this question from a long-hierarchical BI dashboard.',
+      '',
+      '## QUESTION', question,
+      '',
+      promptBaseLong,
+      '',
+      '## OUTPUT — JSON only',
+      '{"queries":[{"id":"q1","title":"title","chart_type":"bar|line|area|pie|donut|kpi|table","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","comparison_key":"comparison_value","unit":"","insight":"one sentence"}],"period_used":"' + periodConds.label + '"}',
+    ].join('\n')
+
+    var sParsed
+    try {
+      sParsed = await callOpenAI(
+        'Senior BI SQL engineer. Long-hierarchical dataset. Return only valid JSON. Table: ' + tbl + '. ONLY use node paths and dimensions from the catalogue.',
+        singlePrompt, 2000
+      )
+    } catch(err) {
+      return Response.json({ error: 'Query generation failed: ' + err.message }, { status: 500 })
+    }
+
+    var sQueries    = sParsed.queries     || []
+    var sPeriodUsed = sParsed.period_used || periodConds.label
+    if (!sQueries.length) return Response.json({ error: 'No queries generated.' }, { status: 400 })
+
+    var sResults = await executeQueries(sQueries)
+    var sSuccess = sResults.filter(function(r) { return !r.error && r.data && r.data.length })
+
+    var sDataSummary = sSuccess.map(function(r) {
+      return { title: r.title, chart_type: r.chart_type, row_count: r.data.length, top_rows: r.data.slice(0, 10) }
+    })
+
+    var sNarrPrompt = [
+      '## TASK',
+      'Answer this question using only the query results. Be specific with numbers.',
+      '',
+      '## QUESTION', question,
+      '## PERIOD', sPeriodUsed, contextNote, mandatoryNote,
+      '## QUERY RESULTS', JSON.stringify(sDataSummary, null, 2),
+      '',
+      '## OUTPUT — JSON only',
+      '{"answer":"2-4 sentence answer with specific numbers","key_findings":["finding 1","finding 2"],"drivers":"1-2 sentences","investigate":["thing to check"],"data_limitation":"note if insufficient, else empty"}',
+    ].join('\n')
+
+    var sNarrative = null
+    try {
+      sNarrative = await callOpenAI(
+        'Senior BI analyst. Answer precisely using only the data provided. Never fabricate numbers.',
+        sNarrPrompt, 1000
+      )
+    } catch(e) { sNarrative = null }
+
+    return Response.json({
+      question, periodUsed: sPeriodUsed, queries: sResults, narrative: sNarrative,
+      datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  // ── TWO-PASS LONG FLOW ──────────────────────────────────────────────
+  var pass1PromptLong = [
+    '## TASK',
+    'Pass 1 of a ' + twoPassTypeLong + ' two-pass question on a long-hierarchical dataset.',
+    twoPassTypeLong === 'performance'
+      ? 'Identify entities (one dimension) that under/over-perform on a chosen hierarchy node vs the portfolio average. Pick the most relevant high-priority L1 or L2 node from the resolved tree based on the question.'
+      : 'Identify the specific entity that matches the analytical criterion in the question (range, variance, peak, pattern). Pick the most relevant hierarchy node based on the question.',
+    '',
+    '## QUESTION', question,
+    '',
+    promptBaseLong,
+    '',
+    '## PASS 1 INSTRUCTIONS',
+    'Generate ONE SQL query that returns a list of entities with one value column.',
+    'Use a SINGLE raw dimension column as label — NEVER concatenate (label values feed a WHERE IN filter in Pass 2).',
+    'Honor favorable_direction of the chosen node when deciding ASC vs DESC and HAVING direction.',
+    '',
+    '## OUTPUT — JSON only',
+    '{"query":{"id":"pass1_ranking","title":"...","chart_type":"bar","sql":"SELECT ...","label_key":"label","value_key":"current_value","current_key":"current_value","unit":"","insight":"..."},"target_node_path":"Revenue > Interest Income","entity_field":"branch_name","period_used":"' + periodConds.label + '"}',
+  ].join('\n')
+
+  var p1Parsed
+  try {
+    p1Parsed = await callOpenAI(
+      'Senior BI SQL engineer. Long-hierarchical dataset. Return only valid JSON. Table: ' + tbl + '. ONLY use node paths and dimensions from the catalogue.',
+      pass1PromptLong, 1000
+    )
+  } catch(err) {
+    return Response.json({
+      question, error: null,
+      queries: [{ id: 'pass1_error', title: 'Analysis Failed', chart_type: 'error', data: [], error: 'Pass 1 failed: ' + err.message }],
+      narrative: null, periodUsed: periodConds.label, datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  var p1Query        = p1Parsed.query
+  var targetNodePath = p1Parsed.target_node_path || ''
+  var entityFieldL   = p1Parsed.entity_field     || 'label'
+  var periodUsedL    = p1Parsed.period_used      || periodConds.label
+
+  if (!p1Query || !p1Query.sql) {
+    return Response.json({
+      question, error: null,
+      queries: [{ id: 'pass1_error', title: 'Setup Error', chart_type: 'error', data: [], error: 'LLM did not return a valid Pass 1 query.' }],
+      narrative: null, periodUsed: periodUsedL, datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  var p1Results
+  try { p1Results = await query(p1Query.sql) }
+  catch(err) {
+    return Response.json({
+      question, error: null,
+      queries: [Object.assign({}, p1Query, { data: [], error: 'Pass 1 SQL error: ' + err.message })],
+      narrative: null, periodUsed: periodUsedL, datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  if (!p1Results || !p1Results.length) {
+    return Response.json({
+      question, error: null,
+      queries: [Object.assign({}, p1Query, { data: [], error: 'No entities found for ' + periodUsedL + '.' })],
+      narrative: null, periodUsed: periodUsedL, datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  var entityListL    = p1Results.map(function(r) { return r[p1Query.label_key || 'label'] || r['label'] }).filter(Boolean)
+  var entityListStrL = entityListL.map(function(e) { return "'" + String(e).replace(/'/g, "''") + "'" }).join(', ')
+
+  // Find child nodes of target (for drill-down hint)
+  var childNodes = nodes
+    .filter(function(n) { return n.parent_path === targetNodePath })
+    .map(function(n) { return { path: n.node_path, name: n.display_name || n.node_name } })
+
+  var pass2PromptLong = [
+    '## TASK',
+    'Pass 2 of a long-hierarchical two-pass question. Pass 1 identified ' + (twoPassTypeLong === 'performance' ? 'under/over-performing entities' : 'the relevant entity') + '.',
+    'Now generate 1-3 queries that explain WHY by drilling into child hierarchy nodes or showing detail.',
+    '',
+    '## ORIGINAL QUESTION', question,
+    '',
+    '## PASS 1 RESULT',
+    'Target node: ' + targetNodePath,
+    'Entity field: ' + entityFieldL,
+    'Identified entities: ' + entityListL.join(', '),
+    'Pass 1 data: ' + JSON.stringify(p1Results.slice(0, 10), null, 2),
+    '',
+    '## CHILD NODES OF TARGET (drill-down candidates)',
+    childNodes.length ? JSON.stringify(childNodes, null, 2) : '(target node has no children — use sibling nodes or trend analysis instead)',
+    '',
+    promptBaseLong,
+    '',
+    '## PASS 2 INSTRUCTIONS',
+    twoPassTypeLong === 'performance'
+      ? '1. Generate a query that breaks down the target node by its CHILDREN for the identified entities.\n   Use chart_type "table" with one column per child node: SELECT entity, SUM(CASE WHEN <child1 hier> THEN ' + valueCol + ' END) AS child1, SUM(CASE WHEN <child2 hier> THEN ' + valueCol + ' END) AS child2, ... FROM tbl WHERE period AND entity IN (...) GROUP BY entity\n2. Optionally add a portfolio-average comparison query for the same children.\n3. If the target has no children, generate a trend query for the target node showing the identified entities over time.'
+      : '1. Generate a detail query for the identified entity. Examples:\n   - Daily/monthly trend of the target node for that entity\n   - Breakdown by child nodes\n   - Comparison vs sibling nodes\n2. Use chart_type "line" for trends, "bar" for breakdowns, "table" for multi-column.\n3. Filter to entity: WHERE ' + entityFieldL + " = '" + String(entityListL[0] || '').replace(/'/g, "''") + "'",
+    'Filter entities for performance pass 2: WHERE ' + entityFieldL + ' IN (' + entityListStrL + ')',
+    '',
+    '## OUTPUT — JSON only',
+    '{"queries":[{"id":"q1","title":"...","chart_type":"table|bar|line","sql":"SELECT ...","label_key":"' + entityFieldL + '","unit":"","insight":"..."}],"period_used":"' + periodUsedL + '"}',
+  ].join('\n')
+
+  var p2Parsed
+  try {
+    p2Parsed = await callOpenAI(
+      'Senior BI SQL engineer. Long-hierarchical dataset. Return only valid JSON. Table: ' + tbl + '. ONLY use node paths and dimensions from the catalogue.',
+      pass2PromptLong, 1500
+    )
+  } catch(err) {
+    var p1Only = Object.assign({}, p1Query, { data: p1Results, error: null })
+    return Response.json({
+      question, periodUsed: periodUsedL,
+      queries: [p1Only],
+      narrative: { answer: 'Identified entities but could not complete drill-down analysis. ' + err.message, key_findings: [], drivers: '', investigate: [], data_limitation: 'Pass 2 failed.' },
+      datasetFormat: 'long_hierarchical',
+      usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+    })
+  }
+
+  var p2Queries = p2Parsed.queries || []
+  periodUsedL   = p2Parsed.period_used || periodUsedL
+
+  var allResultsL = []
+  allResultsL.push(Object.assign({}, p1Query, { data: p1Results, error: null }))
+
+  for (var li = 0; li < p2Queries.length; li++) {
+    var lq = p2Queries[li]
+    try {
+      var lRows = await query(lq.sql)
+      allResultsL.push(Object.assign({}, lq, { data: lRows, error: null }))
+    } catch(err) {
+      console.error('long pass2 query error:', err.message)
+      allResultsL.push(Object.assign({}, lq, { data: [], error: err.message }))
+    }
+  }
+
+  // Narrative
+  var lSuccess = allResultsL.filter(function(r) { return !r.error && r.data && r.data.length })
+  var lDataSummary = lSuccess.map(function(r) {
+    return { title: r.title, chart_type: r.chart_type, row_count: r.data.length, top_rows: r.data.slice(0, 10) }
+  })
+
+  var lNarrPrompt = [
+    '## TASK', 'Answer this question using the query results. Be specific with numbers and entity names.',
+    '',
+    '## QUESTION', question,
+    '## PERIOD', periodUsedL, contextNote, mandatoryNote,
+    '## TARGET NODE', targetNodePath,
+    '## IDENTIFIED ENTITIES', entityListL.join(', '),
+    '## QUERY RESULTS', JSON.stringify(lDataSummary, null, 2),
+    '',
+    '## INSTRUCTIONS',
+    '1. State which entities were identified and their values.',
+    '2. Explain what the drill-down reveals about WHY.',
+    '3. Frame as correlations: "correlates with", "likely contributed to", "data suggests".',
+    '',
+    '## OUTPUT — JSON only',
+    '{"answer":"2-4 sentence answer with specific numbers","key_findings":["finding 1","finding 2"],"drivers":"1-2 sentences on primary drivers","investigate":["thing to check 1"],"data_limitation":"note if insufficient, else empty"}',
+  ].join('\n')
+
+  var lNarrative = null
+  try {
+    lNarrative = await callOpenAI(
+      'Senior BI analyst. Answer precisely using only data provided. Never fabricate numbers.',
+      lNarrPrompt, 1000
+    )
+  } catch(e) { lNarrative = null }
+
+  return Response.json({
+    question, periodUsed: periodUsedL, queries: allResultsL, narrative: lNarrative,
+    twoPass: true, datasetFormat: 'long_hierarchical',
+    usage: { prompt_tokens: totalUsage.prompt_tokens, completion_tokens: totalUsage.completion_tokens, model: 'gpt-4o' },
+  })
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// END handleLongAskFlow
+// ═══════════════════════════════════════════════════════════════════════════
     // ── TWO-PASS FLOW ─────────────────────────────────────────────────────────
   var twoPassType = getTwoPassType(question)
   if (twoPassType) {
